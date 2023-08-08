@@ -8,7 +8,7 @@ public class MyBot : IChessBot
     private Timer timer;
     private List<int> scores;
 
-    private int DEPTH = 1;
+    private int MAX_DEPTH = 1;
 
     public Move Think(Board board, Timer timer)
     {
@@ -16,23 +16,22 @@ public class MyBot : IChessBot
         this.timer = timer;
 
         scores = new();
-        var alpha = int.MinValue;
-        var beta = int.MaxValue;
-        var score = NegaMax(DEPTH, alpha, beta);
+        var alpha = -99999;
+        var beta = 99999;
+        var score = NegaMax(0, alpha, beta);
 
-        Console.WriteLine(scores.Count);
-        foreach (var s in scores)
-        {
-            Console.Write($"{s}, ");
-        }
-        Console.WriteLine();
+        //Console.WriteLine(scores.Count);
+        //foreach (var s in scores)
+        //{
+        //    Console.Write($"{s}, ");
+        //}
+        //Console.WriteLine();
 
         var idx = 0;
         foreach (var s in scores)
         {
             if (s == score)
             {
-                Console.WriteLine(idx);
                 return board.GetLegalMoves()[idx];
             }
             idx++;
@@ -43,16 +42,15 @@ public class MyBot : IChessBot
 
     private int NegaMax(int depth, int alpha, int beta)
     {
-        if (depth == 0) return Eval();
+        if (depth == MAX_DEPTH) return Eval();
 
-        int score;
         foreach(var move in board.GetLegalMoves())
         {
             board.MakeMove(move);
-            score = NegaMax(depth - 1, -beta, -alpha);
+            int score = -NegaMax(depth + 1, -beta, -alpha);
             board.UndoMove(move);
 
-            if (depth == DEPTH) { scores.Add(score); }
+            if (depth == 0) { scores.Add(score); }
 
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
@@ -79,7 +77,7 @@ public class MyBot : IChessBot
             score += value;
         }
 
-        if (board.IsWhiteToMove) score = -score;
+        if (!board.IsWhiteToMove) score = -score;
         return score;
     }
 }
