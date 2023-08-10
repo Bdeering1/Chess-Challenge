@@ -8,7 +8,6 @@ public class MyBot : IChessBot
     private Timer timer;
     private List<int> scores;
     private int branches;
-    private int orderedBranches;
 
     private int MAX_DEPTH = 4;
 
@@ -18,73 +17,21 @@ public class MyBot : IChessBot
         this.board = board;
         this.timer = timer;
         this.branches = 0;
-        this.orderedBranches = 0;
 
         scores = new();
-        var sc = NegaMax(0, -99999, 99999);
-        var score = NegaMaxOrdered(0, -99999, 99999);
+        var score = NegaMax(0, -99999, 99999);
 
-        //Console.WriteLine(scores.Count);
-        //foreach (var s in scores)
-        //{
-        //    Console.Write($"{s}, ");
-        //}
-        //Console.WriteLine();
-
-        Console.WriteLine($"{branches}, {orderedBranches}, {sc==score}");
         var idx = 0;
         foreach (var s in scores)
         {
             if (s == score)
             {
-                return board.GetLegalMoves()[idx];
+                Console.WriteLine($"{score}");
+                return GetOrderedLegalMoves()[idx];
             }
             idx++;
         }
-        return board.GetLegalMoves()[0];
-    }
-
-    private int NegaMaxOrdered(int depth, int alpha, int beta)
-    {
-        orderedBranches++;
-        if (depth == MAX_DEPTH) return Eval();
-
-        var moves = board.GetLegalMoves();
-        List<Move>[] movesSorted = { new List<Move>(0), new List<Move>(0), new List<Move>(0), new List<Move>(0) }; //{promotions, castles, captures, everything else}
-        foreach (var m in moves)
-        {
-            var idx = 3;
-            if (m.IsPromotion) {
-                idx = 0;
-            } else if (m.IsCastles)
-            {
-                idx = 1;
-            } else if (m.IsCapture)
-            {
-                idx = 2;
-            }
-            movesSorted[idx].Add(m);
-        }
-        var moves_sorted = new List<Move>(1);
-        moves_sorted.AddRange(movesSorted[0]);
-        moves_sorted.AddRange(movesSorted[1]);
-        moves_sorted.AddRange(movesSorted[2]);
-        moves_sorted.AddRange(movesSorted[3]);
-
-        foreach (var move in moves_sorted)
-        {
-            board.MakeMove(move);
-            int score = -NegaMaxOrdered(depth + 1, -beta, -alpha);
-            board.UndoMove(move);
-
-            if (depth == 0) { scores.Add(score); }
-
-            // no idea
-            if (score >= beta) return beta;
-            if (score > alpha) alpha = score;
-        }
-
-        return alpha;
+        return GetOrderedLegalMoves()[0];
     }
 
     private int NegaMax(int depth, int alpha, int beta)
@@ -92,7 +39,7 @@ public class MyBot : IChessBot
         branches++;
         if (depth == MAX_DEPTH) return Eval();
 
-        foreach (var move in board.GetLegalMoves())
+        foreach (var move in GetOrderedLegalMoves())
         {
             board.MakeMove(move);
             int score = -NegaMax(depth + 1, -beta, -alpha);
@@ -100,7 +47,6 @@ public class MyBot : IChessBot
 
             if (depth == 0) { scores.Add(score); }
 
-            // no idea
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
         }
@@ -130,9 +76,41 @@ public class MyBot : IChessBot
         return score;
     }
 
-    private List<Move> GetOrderedLegalMoves()
+    private Move[] GetOrderedLegalMoves() //{promotions, castles, captures, everything else}
     {
+        var moves = board.GetLegalMoves();
 
-        return new List<Move>();
+        for (var i = 0; i < moves.Length; i++)
+        {
+            for (var j = i+1; j < moves.Length; j++) {
+                if (moves[i].Equals(moves[j])) {
+                    Console.WriteLine("succ");
+                }
+            }
+        }
+
+        for (var i = 1; i < moves.Length; ++i)
+        {
+            //convert move type into number for sorting
+            int key = GetVal(moves[i]);
+            //store the original element for inserting later
+            var k = moves[i];
+            int j = i - 1;
+
+            //go down the array, swapping until we reach a spot where we can insert
+            while (j>=0 && GetVal(moves[j]) > key)
+            {
+                moves[j + 1] = moves[j];
+                j--;
+            }
+            moves[j + 1] = k; //insert
+        }
+
+        return moves;
+    }
+
+    private int GetVal(Move move) //gets "value" of a move, for move ordering {promotions, castles, captures, everything else}
+    {
+        return move.IsPromotion ? 0 : move.IsCastles ? 1 : move.IsCapture ? 2 : 3;
     }
 }
