@@ -1,5 +1,4 @@
 ﻿using ChessChallenge.API;
-using System;
 using System.Collections.Generic;
 
 public class MyBot : IChessBot
@@ -7,16 +6,17 @@ public class MyBot : IChessBot
     private Board board;
     private Timer timer;
     private List<int> scores;
-    private int branches;
+    private int nodes;
+    private int quiesce_nodes;
 
-    private int MAX_DEPTH = 4;
+    private int MAX_DEPTH = 3;
 
     public Move Think(Board board, Timer timer)
     {
-        //make local vars to use in other functions
         this.board = board;
         this.timer = timer;
-        this.branches = 0;
+        nodes = 0;
+        quiesce_nodes = 0;
 
         scores = new();
         var score = NegaMax(0, -99999, 99999);
@@ -24,11 +24,7 @@ public class MyBot : IChessBot
         var idx = 0;
         foreach (var s in scores)
         {
-            if (s == score)
-            {
-                Console.WriteLine($"{score}");
-                return GetOrderedLegalMoves()[idx];
-            }
+            if (s == score) return GetOrderedLegalMoves()[idx];
             idx++;
         }
         return GetOrderedLegalMoves()[0];
@@ -36,8 +32,8 @@ public class MyBot : IChessBot
 
     private int NegaMax(int depth, int alpha, int beta)
     {
-        branches++;
-        if (depth == MAX_DEPTH) return Eval();
+        nodes++;
+        if (depth == MAX_DEPTH) return Quiesce(alpha, beta);
 
         foreach (var move in GetOrderedLegalMoves())
         {
@@ -45,7 +41,27 @@ public class MyBot : IChessBot
             int score = -NegaMax(depth + 1, -beta, -alpha);
             board.UndoMove(move);
 
-            if (depth == 0) { scores.Add(score); }
+            if (depth == 0) scores.Add(score);
+
+            if (score >= beta) return beta;
+            if (score > alpha) alpha = score;
+        }
+
+        return alpha;
+    }
+
+    private int Quiesce(int alpha, int beta)
+    {
+        quiesce_nodes++;
+        int stand_pat = Eval();
+        if (stand_pat >= beta) return beta;
+        if (stand_pat > alpha) alpha = stand_pat;
+
+        foreach (var move in board.GetLegalMoves())
+        {
+            board.MakeMove(move);
+            int score = -Quiesce(-beta, -alpha);
+            board.UndoMove(move);
 
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
@@ -79,16 +95,6 @@ public class MyBot : IChessBot
     private Move[] GetOrderedLegalMoves() //{promotions, castles, captures, everything else}
     {
         var moves = board.GetLegalMoves();
-
-        for (var i = 0; i < moves.Length; i++)
-        {
-            for (var j = i+1; j < moves.Length; j++) {
-                if (moves[i].Equals(moves[j])) {
-                    Console.WriteLine("succ");
-                }
-            }
-        }
-
         for (var i = 1; i < moves.Length; ++i)
         {
             //convert move type into number for sorting
