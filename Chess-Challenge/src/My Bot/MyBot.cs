@@ -27,7 +27,7 @@ public class MyBot : IChessBot
             if (s == score) return GetOrderedLegalMoves()[idx];
             idx++;
         }
-        return GetOrderedLegalMoves()[0];
+        return Move.NullMove;
     }
 
     private int NegaMax(int depth, int alpha, int beta)
@@ -98,24 +98,24 @@ public class MyBot : IChessBot
         for (var i = 1; i < moves.Length; ++i)
         {
             //convert move type into number for sorting
-            int key = GetVal(moves[i]);
+            int precedence = GetPrecedence(moves[i]);
             //store the original element for inserting later
-            var k = moves[i];
+            var move = moves[i];
             int j = i - 1;
 
             //go down the array, swapping until we reach a spot where we can insert
-            while (j>=0 && GetVal(moves[j]) > key)
+            while (j >= 0 && GetPrecedence(moves[j]) > precedence)
             {
                 moves[j + 1] = moves[j];
                 j--;
             }
-            moves[j + 1] = k; //insert
+            moves[j + 1] = move; //insert
         }
 
         return moves;
     }
 
-    private int GetVal(Move move) //gets "value" of a move, for move ordering {promotions, castles, captures, everything else}
+    private int GetPrecedence(Move move) //gets precedence of a move for move ordering {promotions, castles, captures, everything else}
     {
         return move.IsPromotion ? 0 : move.IsCastles ? 1 : move.IsCapture ? 2 : 3;
     }
