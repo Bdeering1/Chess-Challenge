@@ -10,7 +10,8 @@ public class MyBot : IChessBot
     private int nodes;
     private int quiesce_nodes;
 
-    private readonly int MAX_DEPTH = 3;
+    private int search_depth = 1;
+    private readonly int MAX_DEPTH = 2;
 
     public Move Think(Board board, Timer timer)
     {
@@ -19,8 +20,24 @@ public class MyBot : IChessBot
         nodes = 0;
         quiesce_nodes = 0;
 
+        Console.WriteLine("\nRegular search:");
+        search_depth = MAX_DEPTH;
+        moves_table = new();
         NegaMax(0, -99999, 99999);
-        Console.WriteLine($"nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn}ms");
+        var reg_delta = timer.MillisecondsElapsedThisTurn;
+        Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
+
+        Console.WriteLine("\nIteratorive deepening:");
+        search_depth = 1;
+        moves_table = new();
+        while (search_depth <= MAX_DEPTH)
+        {
+            nodes = 0;
+            quiesce_nodes = 0;
+            NegaMax(0, -99999, 99999);
+            Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn - reg_delta}ms");
+            search_depth++;
+        }
 
         return GetOrderedLegalMoves()[0];
     }
@@ -28,7 +45,7 @@ public class MyBot : IChessBot
     private int NegaMax(int depth, int alpha, int beta)
     {
         nodes++;
-        if (depth == MAX_DEPTH) return Quiesce(alpha, beta);
+        if (depth == search_depth) return Quiesce(alpha, beta);
 
         Move? pv = null;
         foreach (var move in GetOrderedLegalMoves())
@@ -97,12 +114,11 @@ public class MyBot : IChessBot
             pv_idx++;
         }
 
-        Move temp_move = moves[0];
-        for (int i = 0; i < pv_idx; i++)
+        var i = 0;
+        while (i < pv_idx)
         {
-            moves[i] = temp_move;
-            temp_move = moves[i + 1];
             moves[i + 1] = moves[i];
+            i++;
         }
         moves[0] = pv_move;
     }
@@ -112,7 +128,7 @@ public class MyBot : IChessBot
         if (moves_table.TryGetValue(board.ZobristKey, out var moves)) return moves;
 
         moves = board.GetLegalMoves();
-        for (var i = 1; i < moves.Length; ++i)
+        for (var i = 1; i < moves.Length; i++)
         {
             //convert move type into number for sorting
             int precedence = GetPrecedence(moves[i]);
@@ -129,6 +145,7 @@ public class MyBot : IChessBot
             moves[j + 1] = move; //insert move
         }
 
+        moves_table[board.ZobristKey] = moves;
         return moves;
     }
 
