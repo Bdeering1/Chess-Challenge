@@ -11,7 +11,7 @@ public class MyBot : IChessBot
     private int quiesce_nodes;
 
     private int search_depth = 1;
-    private readonly int MAX_DEPTH = 2;
+    private readonly int MAX_DEPTH = 3;
 
     public Move Think(Board board, Timer timer)
     {
@@ -20,12 +20,12 @@ public class MyBot : IChessBot
         nodes = 0;
         quiesce_nodes = 0;
 
-        Console.WriteLine("\nRegular search:");
-        search_depth = MAX_DEPTH;
-        moves_table = new();
-        NegaMax(0, -99999, 99999);
-        var reg_delta = timer.MillisecondsElapsedThisTurn;
-        Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
+        //Console.WriteLine("\nRegular search:");
+        //search_depth = MAX_DEPTH;
+        //moves_table = new();
+        //NegaMax(0, -99999, 99999);
+        //var reg_delta = timer.MillisecondsElapsedThisTurn;
+        //Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
 
         Console.WriteLine("\nIteratorive deepening:");
         search_depth = 1;
@@ -35,12 +35,13 @@ public class MyBot : IChessBot
             nodes = 0;
             quiesce_nodes = 0;
             NegaMax(0, -99999, 99999);
-            Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn - reg_delta}ms");
+            Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
             search_depth++;
         }
 
         return GetOrderedLegalMoves()[0];
     }
+
 
     private int NegaMax(int depth, int alpha, int beta)
     {
@@ -82,27 +83,6 @@ public class MyBot : IChessBot
         return alpha;
     }
 
-    private int Eval()
-    {
-        var score = 0;
-        foreach (var list in board.GetAllPieceLists())
-        {
-            var value = (int)list.TypeOfPieceInList switch
-            {
-                1 => 100,
-                2 or 3 => 325,
-                4 => 550,
-                5 => 1000,
-                _ => 50000,
-            } * list.Count;
-
-            if (!list.IsWhitePieceList) value = -value;
-            score += value;
-        }
-
-        if (!board.IsWhiteToMove) score = -score;
-        return score;
-    }
 
     private void SetPV(Move pv_move)
     {
@@ -152,5 +132,28 @@ public class MyBot : IChessBot
     private int GetPrecedence(Move move) //gets precedence of a move for move ordering {promotions, castles, captures, everything else}
     {
         return move.IsPromotion ? 0 : move.IsCastles ? 1 : move.IsCapture ? 2 : 3;
+    }
+
+
+    private int Eval()
+    {
+        var score = 0;
+        foreach (var list in board.GetAllPieceLists())
+        {
+            var value = (int)list.TypeOfPieceInList switch
+            {
+                1 => 100,
+                2 or 3 => 325,
+                4 => 550,
+                5 => 1000,
+                _ => 50000,
+            } * list.Count;
+
+            if (!list.IsWhitePieceList) value = -value;
+            score += value;
+        }
+
+        if (!board.IsWhiteToMove) score = -score;
+        return score;
     }
 }
