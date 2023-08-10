@@ -1,15 +1,16 @@
 ﻿using ChessChallenge.API;
+using System;
 using System.Collections.Generic;
 
 public class MyBot : IChessBot
 {
     private Board board;
     private Timer timer;
-    private List<int> scores;
+    private Dictionary<ulong, Move[]> moves_table = new();
     private int nodes;
     private int quiesce_nodes;
 
-    private int MAX_DEPTH = 3;
+    private readonly int MAX_DEPTH = 3;
 
     public Move Think(Board board, Timer timer)
     {
@@ -18,16 +19,10 @@ public class MyBot : IChessBot
         nodes = 0;
         quiesce_nodes = 0;
 
-        scores = new();
-        var score = NegaMax(0, -99999, 99999);
+        NegaMax(0, -99999, 99999);
+        Console.WriteLine($"nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn}ms");
 
-        var idx = 0;
-        foreach (var s in scores)
-        {
-            if (s == score) return GetOrderedLegalMoves()[idx];
-            idx++;
-        }
-        return Move.NullMove;
+        return GetOrderedLegalMoves()[0];
     }
 
     private int NegaMax(int depth, int alpha, int beta)
@@ -35,18 +30,18 @@ public class MyBot : IChessBot
         nodes++;
         if (depth == MAX_DEPTH) return Quiesce(alpha, beta);
 
+        Move? pv = null;
         foreach (var move in GetOrderedLegalMoves())
         {
             board.MakeMove(move);
             int score = -NegaMax(depth + 1, -beta, -alpha);
             board.UndoMove(move);
 
-            if (depth == 0) scores.Add(score);
-
             if (score >= beta) return beta;
-            if (score > alpha) alpha = score;
+            if (score > alpha) { alpha = score; pv = move; }
         }
 
+        if (pv.HasValue) SetPV(pv.Value);
         return alpha;
     }
 
@@ -57,7 +52,7 @@ public class MyBot : IChessBot
         if (stand_pat >= beta) return beta;
         if (stand_pat > alpha) alpha = stand_pat;
 
-        foreach (var move in board.GetLegalMoves())
+        foreach (var move in GetOrderedLegalMoves())
         {
             board.MakeMove(move);
             int score = -Quiesce(-beta, -alpha);
@@ -92,9 +87,31 @@ public class MyBot : IChessBot
         return score;
     }
 
+    private void SetPV(Move pv_move)
+    {
+        var moves = GetOrderedLegalMoves();
+        var pv_idx = 0;
+        foreach (var m in moves)
+        {
+            if (m == pv_move) break;
+            pv_idx++;
+        }
+
+        Move temp_move = moves[0];
+        for (int i = 0; i < pv_idx; i++)
+        {
+            moves[i] = temp_move;
+            temp_move = moves[i + 1];
+            moves[i + 1] = moves[i];
+        }
+        moves[0] = pv_move;
+    }
+
     private Move[] GetOrderedLegalMoves() //{promotions, castles, captures, everything else}
     {
-        var moves = board.GetLegalMoves();
+        if (moves_table.TryGetValue(board.ZobristKey, out var moves)) return moves;
+
+        moves = board.GetLegalMoves();
         for (var i = 1; i < moves.Length; ++i)
         {
             //convert move type into number for sorting
@@ -109,7 +126,7 @@ public class MyBot : IChessBot
                 moves[j + 1] = moves[j];
                 j--;
             }
-            moves[j + 1] = move; //insert
+            moves[j + 1] = move; //insert move
         }
 
         return moves;
