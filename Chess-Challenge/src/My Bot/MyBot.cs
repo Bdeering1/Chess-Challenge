@@ -11,10 +11,19 @@ public class MyBot : IChessBot
     private int quiesce_nodes;
 
     private int search_depth = 1;
-    private readonly int MAX_DEPTH = 3;
+    private readonly int MAX_DEPTH = 4;
+
+    private bool logged_side = false;
 
     public Move Think(Board board, Timer timer)
     {
+        if (!logged_side)
+        {
+            if (board.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white");
+            else if (!logged_side) Console.WriteLine("Playing black");
+            logged_side = true;
+        }
+
         this.board = board;
         this.timer = timer;
         nodes = 0;
@@ -27,7 +36,7 @@ public class MyBot : IChessBot
         //var reg_delta = timer.MillisecondsElapsedThisTurn;
         //Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
 
-        Console.WriteLine("\nIteratorive deepening:");
+        //Console.WriteLine("\nIteratorive deepening:");
         search_depth = 1;
         moves_table = new();
         while (search_depth <= MAX_DEPTH)
@@ -35,7 +44,7 @@ public class MyBot : IChessBot
             nodes = 0;
             quiesce_nodes = 0;
             NegaMax(0, -99999, 99999);
-            Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
+            //Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
             search_depth++;
         }
 
@@ -46,7 +55,7 @@ public class MyBot : IChessBot
     private int NegaMax(int depth, int alpha, int beta)
     {
         nodes++;
-        if (depth == search_depth) return Quiesce(alpha, beta);
+        if (depth >= search_depth) return Quiesce(alpha, beta);
 
         Move? pv = null;
         foreach (var move in GetOrderedLegalMoves())
@@ -70,7 +79,7 @@ public class MyBot : IChessBot
         if (stand_pat >= beta) return beta;
         if (stand_pat > alpha) alpha = stand_pat;
 
-        foreach (var move in GetOrderedLegalMoves())
+        foreach (var move in board.GetLegalMoves(true))
         {
             board.MakeMove(move);
             int score = -Quiesce(-beta, -alpha);
@@ -135,25 +144,67 @@ public class MyBot : IChessBot
     }
 
 
+    /*
+     * Eval Options
+     * --------------------------------------------------------------------------------------------------
+     * Piece Square                                 https://www.chessprogramming.org/Piece-Square_Tables
+     *   - could be programatically generated
+     * Piece Specific Eval                          https://www.chessprogramming.org/Evaluation_of_Pieces
+     * Pattern Evaluation                           https://www.chessprogramming.org/Evaluation_Patterns
+     * Mobility                                     https://www.chessprogramming.org/Mobility
+     * Center Control                               https://www.chessprogramming.org/Center_Control
+     * Connectivity                                 https://www.chessprogramming.org/Connectivity
+     * King Safety                                  https://www.chessprogramming.org/King_Safety
+     * Space                                        https://www.chessprogramming.org/Space
+     * Tempo                                        https://www.chessprogramming.org/Tempo
+     */
     private int Eval()
     {
+        if (board.IsDraw()) return 0;
+        if (board.IsInCheckmate()) return -50000;
+
         var score = 0;
+        var captured_pawns = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
+
         foreach (var list in board.GetAllPieceLists())
         {
-            var value = (int)list.TypeOfPieceInList switch
+            /* Material score */
+            var piece_type = (int)list.TypeOfPieceInList;
+            score += list.IsWhitePieceList ? 1 : -1 * piece_type switch
             {
-                1 => 100,
-                2 or 3 => 325,
-                4 => 550,
-                5 => 1000,
-                _ => 50000,
+                1 => 100 + GetPawnScore(list),
+                // knight increased in value the more pawns there are
+                2 => 333 /*(325 + 8)*/ - list.Count * captured_pawns,
+                3 => 317 /*(325 - 8*/,
+                // rooks increase in value the fewer pawns there are
+                4 => 550 + list.Count * captured_pawns,
+                // queens increase in value the fewer pawns there are
+                5 => 1000 + list.Count * captured_pawns - BitboardHelper.GetNumberOfSetBits(BitboardHelper.GetSliderAttacks(PieceType.Queen, list[0].Square, board)),
+                _ => 0,
             } * list.Count;
-
-            if (!list.IsWhitePieceList) value = -value;
-            score += value;
         }
 
-        if (!board.IsWhiteToMove) score = -score;
+        /* Mobility Score */
+        var side_multiplier = board.IsWhiteToMove ? 1 : -1;
+        score += side_multiplier * GetOrderedLegalMoves().Length;
+        board.ForceSkipTurn();
+        score += -side_multiplier * GetOrderedLegalMoves().Length;
+        board.UndoSkipTurn();
+
+        score *= board.IsWhiteToMove ? 1 : -1;
+        return score;
+    }
+
+    private int GetPawnScore(PieceList pawn_list)
+    {
+        var score = 0;
+        //var pawns = board.GetPieceBitboard(PieceType.Pawn, pawn_list.IsWhitePieceList);
+        //int pawn_idx;
+        //while ((pawn_idx = BitboardHelper.ClearAndGetIndexOfLSB(ref pawns)) != 64)
+        //{
+        //    score += (64 - pawn_idx) / 4; // not sure if this is right
+        //}
+
         return score;
     }
 }
