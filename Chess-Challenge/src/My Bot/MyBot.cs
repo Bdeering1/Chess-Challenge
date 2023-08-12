@@ -11,9 +11,13 @@ public class MyBot : IChessBot
     private int quiesce_nodes;
 
     private int search_depth = 1;
-    private readonly int MAX_DEPTH = 4;
+    private readonly int MAX_DEPTH = 10;
 
     private bool logged_side = false;
+
+    private double moves = 0;
+
+    //possibly add constructor to test computer speed?
 
     public Move Think(Board board, Timer timer)
     {
@@ -36,9 +40,10 @@ public class MyBot : IChessBot
         //var reg_delta = timer.MillisecondsElapsedThisTurn;
         //Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
 
-        //Console.WriteLine("\nIteratorive deepening:");
+        //Console.WriteLine("\nIterative deepening:");
         search_depth = 1;
-        moves_table = new();
+        //moves_table = new();
+        int startTime = 0;
         while (search_depth <= MAX_DEPTH)
         {
             nodes = 0;
@@ -46,8 +51,15 @@ public class MyBot : IChessBot
             NegaMax(0, -99999, 99999);
             //Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
             search_depth++;
+
+            //if the next iteration will take too much time, skip it
+            if (getTimeForNextDepth((double)(timer.MillisecondsElapsedThisTurn - startTime) / (nodes+quiesce_nodes))/2 + timer.MillisecondsElapsedThisTurn > getTimeAllowance()) break;
+            startTime = timer.MillisecondsElapsedThisTurn;
         }
 
+        moves++;
+        Console.WriteLine($"{timer.MillisecondsElapsedThisTurn:0.##}, {((timer.GameStartTimeMilliseconds-timer.MillisecondsRemaining) / moves):0.##}, {search_depth}");
+        
         return GetOrderedLegalMoves()[0];
     }
 
@@ -112,6 +124,17 @@ public class MyBot : IChessBot
         moves[0] = pv_move;
     }
 
+    private int getTimeForNextDepth(double timePerNode)
+    {
+
+        return (int)(Math.Pow(nodes + quiesce_nodes, 1.3) * timePerNode);
+    }
+
+    private int getTimeAllowance() //TODO: make this change based on opponent time left
+    {
+        return timer.GameStartTimeMilliseconds / 40; //average moves in a chess game is 40
+    }
+
     private Move[] GetOrderedLegalMoves() //{promotions, castles, captures, everything else}
     {
         if (moves_table.TryGetValue(board.ZobristKey, out var moves)) return moves;
@@ -140,7 +163,23 @@ public class MyBot : IChessBot
 
     private int GetPrecedence(Move move) //gets precedence of a move for move ordering {promotions, castles, captures, everything else}
     {
-        return move.IsPromotion ? 0 : move.IsCastles ? 1 : move.IsCapture ? 2 : 3;
+        //queen promotions: 0
+        //castles: 1
+        //captures: 6-14
+        //everything else: 20
+
+        //possibly add check of target square to value farther up pieces better?
+
+        //queen promotions are worth the most
+        if (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) return 0;
+        //captures are ordered by the value of the piece they take
+        if (move.IsCapture) return 10 - (int)move.CapturePieceType + (int)move.MovePieceType;
+        //castles are worth 2nd most, after queen promotions
+        if (move.IsCastles) return 1;
+        //everything else is just put after that
+        return 20;
+
+        //return move.IsPromotion ? 0 : move.IsCastles ? 1 : move.IsCapture ? 2 : 3;
     }
 
 
@@ -158,7 +197,7 @@ public class MyBot : IChessBot
      * Space                                        https://www.chessprogramming.org/Space
      * Tempo                                        https://www.chessprogramming.org/Tempo
      */
-    private int Eval()
+        private int Eval()
     {
         if (board.IsDraw()) return 0;
         if (board.IsInCheckmate()) return -50000;
@@ -175,9 +214,9 @@ public class MyBot : IChessBot
                 1 => 100 + GetPawnScore(list),
                 // knight increased in value the more pawns there are
                 2 => 333 /*(325 + 8)*/ - list.Count * captured_pawns,
-                3 => 317 /*(325 - 8*/,
+                3 => 325,
                 // rooks increase in value the fewer pawns there are
-                4 => 550 + list.Count * captured_pawns,
+                4 => 542 /*(550 - 8)*/ + list.Count * captured_pawns,
                 // queens increase in value the fewer pawns there are
                 5 => 1000 + list.Count * captured_pawns - BitboardHelper.GetNumberOfSetBits(BitboardHelper.GetSliderAttacks(PieceType.Queen, list[0].Square, board)),
                 _ => 0,
