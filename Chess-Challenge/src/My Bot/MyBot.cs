@@ -2,6 +2,26 @@
 using System;
 using System.Collections.Generic;
 
+/*
+ * Development Resources
+ * -------------------------------------------------------------------------------------------------
+ * Move Ordering:                                       https://rustic-chess.org/search/ordering/reason.html
+ * 
+ * Make EvilBot use Stockfish:                          https://github.com/SebLague/Chess-Challenge/discussions/311
+ * Add buttons to play against different bots:          https://github.com/SebLague/Chess-Challenge/discussions/239
+ * Chess Challenge Discord:                             https://discord.com/invite/pAadhun2px
+ * 
+ * Interesting looking bots:
+ *  - https://github.com/nathanWolo/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ *  - https://github.com/dorinon/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ *  - https://github.com/Tjalle-S/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ *  - https://github.com/Sidhant-Roymoulik/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ *  - https://github.com/outercloudstudio/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ *  - https://github.com/Nitish-Naineni/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ *  
+ *  Notes:
+ *  - implement packed PSTs
+ */
 public class MyBot : IChessBot
 {
     private Board board;
