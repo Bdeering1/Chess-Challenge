@@ -6,7 +6,10 @@ using System.Collections.Generic;
  * Development Resources
  * -------------------------------------------------------------------------------------------------
  * Move Ordering:                                       https://rustic-chess.org/search/ordering/reason.html
+ * Average moves per game:                              https://chess.stackexchange.com/a/4899
+ * Effective branching factor:                          https://www.chessprogramming.org/Branching_Factor#EffectiveBranchingFactor
  * 
+ * Tiny Chess League:                                   https://chess.stjo.dev/
  * Make EvilBot use Stockfish:                          https://github.com/SebLague/Chess-Challenge/discussions/311
  * Add buttons to play against different bots:          https://github.com/SebLague/Chess-Challenge/discussions/239
  * Chess Challenge Discord:                             https://discord.com/invite/pAadhun2px
@@ -18,9 +21,6 @@ using System.Collections.Generic;
  *  - https://github.com/Sidhant-Roymoulik/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
  *  - https://github.com/outercloudstudio/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
  *  - https://github.com/Nitish-Naineni/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
- *  
- *  Notes:
- *  - implement packed PSTs
  */
 public class MyBot : IChessBot
 {
@@ -37,7 +37,6 @@ public class MyBot : IChessBot
 
     private double moves = 0;
 
-    //possibly add constructor to test computer speed?
 
     public Move Think(Board board, Timer timer)
     {
@@ -73,12 +72,11 @@ public class MyBot : IChessBot
             search_depth++;
 
             //if the next iteration will take too much time, skip it
-            if (getTimeForNextDepth((double)(timer.MillisecondsElapsedThisTurn - startTime) / (nodes+quiesce_nodes))/2 + timer.MillisecondsElapsedThisTurn > getTimeAllowance()) break;
+            if (GetTimeForNextDepth((double)(timer.MillisecondsElapsedThisTurn - startTime) / (nodes + quiesce_nodes)) / 2 + timer.MillisecondsElapsedThisTurn > GetTimeAllowance()) break;
             startTime = timer.MillisecondsElapsedThisTurn;
         }
 
-        moves++;
-        Console.WriteLine($"{timer.MillisecondsElapsedThisTurn:0.##}, {((timer.GameStartTimeMilliseconds-timer.MillisecondsRemaining) / moves):0.##}, {search_depth}");
+        Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0.##}ms", -10} depth: {search_depth}");
         
         return GetOrderedLegalMoves()[0];
     }
@@ -144,35 +142,32 @@ public class MyBot : IChessBot
         moves[0] = pv_move;
     }
 
-    private int getTimeForNextDepth(double timePerNode)
+    private int GetTimeForNextDepth(double timePerNode)
     {
 
         return (int)(Math.Pow(nodes + quiesce_nodes, 1.3) * timePerNode);
     }
 
-    private int getTimeAllowance() //TODO: make this change based on opponent time left
+    private int GetTimeAllowance() //TODO: make this change based on opponent time left
     {
         return timer.GameStartTimeMilliseconds / 40; //average moves in a chess game is 40
     }
 
-    private Move[] GetOrderedLegalMoves() //{promotions, castles, captures, everything else}
+    private Move[] GetOrderedLegalMoves()
     {
         if (moves_table.TryGetValue(board.ZobristKey, out var moves)) return moves;
 
         moves = board.GetLegalMoves();
         for (var i = 1; i < moves.Length; i++)
         {
-            //convert move type into number for sorting
-            int precedence = GetPrecedence(moves[i]);
             //store the original element for inserting later
             var move = moves[i];
             int j = i - 1;
 
             //go down the array, swapping until we reach a spot where we can insert
-            while (j >= 0 && GetPrecedence(moves[j]) > precedence)
+            while (j >= 0 && GetPrecedence(moves[j]) > GetPrecedence(move))
             {
-                moves[j + 1] = moves[j];
-                j--;
+                moves[j + 1] = moves[j--];
             }
             moves[j + 1] = move; //insert move
         }
@@ -188,8 +183,6 @@ public class MyBot : IChessBot
         //captures: 6-14
         //everything else: 20
 
-        //possibly add check of target square to value farther up pieces better?
-
         //queen promotions are worth the most
         if (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) return 0;
         //captures are ordered by the value of the piece they take
@@ -198,8 +191,6 @@ public class MyBot : IChessBot
         if (move.IsCastles) return 1;
         //everything else is just put after that
         return 20;
-
-        //return move.IsPromotion ? 0 : move.IsCastles ? 1 : move.IsCapture ? 2 : 3;
     }
 
 
@@ -217,7 +208,7 @@ public class MyBot : IChessBot
      * Space                                        https://www.chessprogramming.org/Space
      * Tempo                                        https://www.chessprogramming.org/Tempo
      */
-        private int Eval()
+    private int Eval()
     {
         if (board.IsDraw()) return 0;
         if (board.IsInCheckmate()) return -50000;
@@ -231,7 +222,7 @@ public class MyBot : IChessBot
             var piece_type = (int)list.TypeOfPieceInList;
             score += list.IsWhitePieceList ? 1 : -1 * piece_type switch
             {
-                1 => 100 + GetPawnScore(list),
+                1 => 100,
                 // knight increased in value the more pawns there are
                 2 => 333 /*(325 + 8)*/ - list.Count * captured_pawns,
                 3 => 325,
@@ -251,19 +242,6 @@ public class MyBot : IChessBot
         board.UndoSkipTurn();
 
         score *= board.IsWhiteToMove ? 1 : -1;
-        return score;
-    }
-
-    private int GetPawnScore(PieceList pawn_list)
-    {
-        var score = 0;
-        //var pawns = board.GetPieceBitboard(PieceType.Pawn, pawn_list.IsWhitePieceList);
-        //int pawn_idx;
-        //while ((pawn_idx = BitboardHelper.ClearAndGetIndexOfLSB(ref pawns)) != 64)
-        //{
-        //    score += (64 - pawn_idx) / 4; // not sure if this is right
-        //}
-
         return score;
     }
 }
