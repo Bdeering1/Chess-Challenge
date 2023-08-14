@@ -31,11 +31,14 @@ public class MyBot : IChessBot
     private int quiesce_nodes;
 
     private int search_depth = 1;
-    private readonly int MAX_DEPTH = 10;
+    private readonly int MAX_DEPTH = 4;
 
     private bool logged_side = false;
-
     private double moves = 0;
+
+    private readonly int[] piece_val = { 0, 100, 317 /* 325 - 8 */, 325, 558 /* 550 + 8 */, 1000, 0 };
+    private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
+    private readonly int[] pawn_modifier = { 0, 0, 1, 0, -1, 0, 0 };
 
 
     public Move Think(Board board, Timer timer)
@@ -49,17 +52,16 @@ public class MyBot : IChessBot
 
         this.board = board;
         this.timer = timer;
-        nodes = 0;
-        quiesce_nodes = 0;
+        nodes = quiesce_nodes = 0;
 
         //Console.WriteLine("\nRegular search:");
         //search_depth = MAX_DEPTH;
         //moves_table = new();
-        //NegaMax(0, -99999, 99999);
+        //int score = NegaMax(0, -99999, 99999);
         //var reg_delta = timer.MillisecondsElapsedThisTurn;
-        //Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
+        //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
 
-        //Console.WriteLine("\nIterative deepening:");
+        Console.WriteLine("\nIterative deepening:");
         search_depth = 1;
         //moves_table = new();
         int startTime = 0;
@@ -67,21 +69,22 @@ public class MyBot : IChessBot
         {
             nodes = 0;
             quiesce_nodes = 0;
-            NegaMax(0, -99999, 99999);
-            //Console.WriteLine($"depth: {search_depth} nodes: {nodes,-8} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
+            int score = NegaMax(0, -99999, 99999);
+            Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
             search_depth++;
 
             //if the next iteration will take too much time, skip it
-            if (GetTimeForNextDepth((double)(timer.MillisecondsElapsedThisTurn - startTime) / (nodes + quiesce_nodes)) / 2 + timer.MillisecondsElapsedThisTurn > GetTimeAllowance()) break;
-            startTime = timer.MillisecondsElapsedThisTurn;
+            //if (GetTimeForNextDepth((double)(timer.MillisecondsElapsedThisTurn - startTime) / (nodes + quiesce_nodes)) / 2 + timer.MillisecondsElapsedThisTurn > GetTimeAllowance()) break;
+            //startTime = timer.MillisecondsElapsedThisTurn;
         }
 
-        Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0.##}ms", -10} depth: {search_depth}");
+        //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0.##}ms", -10} depth: {search_depth}");
         
         return GetOrderedLegalMoves()[0];
     }
 
 
+    /* SEARCH ---------------------------------------------------------------------------------- */
     private int NegaMax(int depth, int alpha, int beta)
     {
         nodes++;
@@ -123,6 +126,7 @@ public class MyBot : IChessBot
     }
 
 
+    /* MOVE ORDERING --------------------------------------------------------------------------- */
     private void SetPV(Move pv_move)
     {
         var moves = GetOrderedLegalMoves();
@@ -140,17 +144,6 @@ public class MyBot : IChessBot
             i++;
         }
         moves[0] = pv_move;
-    }
-
-    private int GetTimeForNextDepth(double timePerNode)
-    {
-
-        return (int)(Math.Pow(nodes + quiesce_nodes, 1.3) * timePerNode);
-    }
-
-    private int GetTimeAllowance() //TODO: make this change based on opponent time left
-    {
-        return timer.GameStartTimeMilliseconds / 40; //average moves in a chess game is 40
     }
 
     private Move[] GetOrderedLegalMoves()
@@ -194,7 +187,20 @@ public class MyBot : IChessBot
     }
 
 
-    /*
+    /* TIME MANAGEMENT ------------------------------------------------------------------------- */
+    private int GetTimeForNextDepth(double timePerNode)
+    {
+        return (int)(Math.Pow(nodes + quiesce_nodes, 1.3) * timePerNode);
+    }
+
+    private int GetTimeAllowance() //TODO: make this change based on opponent time left
+    {
+        return timer.GameStartTimeMilliseconds / 40; //average moves in a chess game is 40
+    }
+
+
+    /* EVALUATION ------------------------------------------------------------------------------ */
+    /* 
      * Eval Options
      * --------------------------------------------------------------------------------------------------
      * Piece Square                                 https://www.chessprogramming.org/Piece-Square_Tables
@@ -213,35 +219,46 @@ public class MyBot : IChessBot
         if (board.IsDraw()) return 0;
         if (board.IsInCheckmate()) return -50000;
 
-        var score = 0;
-        var captured_pawns = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
+        int score = 0,
+            side_multiplier = board.IsWhiteToMove ? 1 : -1,
+            pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
 
-        foreach (var list in board.GetAllPieceLists())
+        //int mg = 0, eg = 0, phase = 0;
+        foreach (bool is_white in new[] { true, false }) //true = white, false = black
         {
-            /* Material score */
-            var piece_type = (int)list.TypeOfPieceInList;
-            score += list.IsWhitePieceList ? 1 : -1 * piece_type switch
+            for (var piece_type = PieceType.Pawn; piece_type < PieceType.King; piece_type++)
             {
-                1 => 100,
-                // knight increased in value the more pawns there are
-                2 => 333 /*(325 + 8)*/ - list.Count * captured_pawns,
-                3 => 325,
-                // rooks increase in value the fewer pawns there are
-                4 => 542 /*(550 - 8)*/ + list.Count * captured_pawns,
-                // queens increase in value the fewer pawns there are
-                5 => 1000 + list.Count * captured_pawns - BitboardHelper.GetNumberOfSetBits(BitboardHelper.GetSliderAttacks(PieceType.Queen, list[0].Square, board)),
-                _ => 0,
-            } * list.Count;
+                int piece = (int)piece_type;//, idx;
+                ulong mask = board.GetPieceBitboard(piece_type, is_white);
+                while (mask != 0)
+                {
+                    int lsb = BitboardHelper.ClearAndGetIndexOfLSB(ref mask);
+                    if (piece == 5) score -= BitboardHelper.GetNumberOfSetBits(BitboardHelper.GetSliderAttacks(PieceType.Queen, new Square(lsb), board));
+                    //phase += piece_phase[piece];
+                    //idx = 128 * (piece - 1) + BitboardHelper.ClearAndGetIndexOfLSB(ref mask) ^ (side_to_move ? 56 : 0);
+                    score /*mg*/ += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx);
+                    //eg += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx + 64);
+                }
+            }
+
+            score = -score;
+            //mg = -mg;
+            //eg = -eg;
         }
 
+        //score = (mg * phase + eg * (24 - phase)) / 24; // max phase = 24
+
         /* Mobility Score */
-        var side_multiplier = board.IsWhiteToMove ? 1 : -1;
         score += side_multiplier * GetOrderedLegalMoves().Length;
         board.ForceSkipTurn();
         score += -side_multiplier * GetOrderedLegalMoves().Length;
         board.UndoSkipTurn();
 
-        score *= board.IsWhiteToMove ? 1 : -1;
-        return score;
+        return score * side_multiplier;
+    }
+
+    private int GetPstVal(int idx)
+    {
+        return 0;
     }
 }
