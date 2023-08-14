@@ -29,9 +29,10 @@ public class MyBot : IChessBot
     private Dictionary<ulong, Move[]> moves_table = new();
     private int nodes;
     private int quiesce_nodes;
+    private int tt_hits;
 
     private int search_depth = 1;
-    private readonly int MAX_DEPTH = 4;
+    private readonly int MAX_DEPTH = 15;
 
     private bool logged_side = false;
     private double moves = 0;
@@ -39,6 +40,19 @@ public class MyBot : IChessBot
     private readonly int[] piece_val = { 0, 100, 317 /* 325 - 8 */, 325, 558 /* 550 + 8 */, 1000, 0 };
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
     private readonly int[] pawn_modifier = { 0, 0, 1, 0, -1, 0, 0 };
+
+    struct TTEntry
+    {
+        public Move move;
+        public int score, depth, bound; // bound: 0 = exact, 1 = lower, 2 = upper
+
+        public TTEntry(Move _move, int _score, int _depth, int _bound)
+        {
+            move = _move; score = _score; depth = _depth; bound = _bound;
+        }
+    }
+
+    private Dictionary<ulong, TTEntry> tt = new();
 
 
     public Move Think(Board board, Timer timer)
@@ -52,7 +66,7 @@ public class MyBot : IChessBot
 
         this.board = board;
         this.timer = timer;
-        nodes = quiesce_nodes = 0;
+        nodes = quiesce_nodes = tt_hits = 0;
 
         //Console.WriteLine("\nRegular search:");
         //search_depth = MAX_DEPTH;
@@ -61,21 +75,20 @@ public class MyBot : IChessBot
         //var reg_delta = timer.MillisecondsElapsedThisTurn;
         //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
 
-        Console.WriteLine("\nIterative deepening:");
+        //Console.WriteLine("\nIterative deepening:");
         search_depth = 1;
         //moves_table = new();
         int startTime = 0;
         while (search_depth <= MAX_DEPTH)
         {
-            nodes = 0;
-            quiesce_nodes = 0;
+            nodes = quiesce_nodes = tt_hits = 0;
             int score = NegaMax(0, -99999, 99999);
-            Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
+            //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
             search_depth++;
 
             //if the next iteration will take too much time, skip it
-            //if (GetTimeForNextDepth((double)(timer.MillisecondsElapsedThisTurn - startTime) / (nodes + quiesce_nodes)) / 2 + timer.MillisecondsElapsedThisTurn > GetTimeAllowance()) break;
-            //startTime = timer.MillisecondsElapsedThisTurn;
+            if (GetTimeForNextDepth((double)(timer.MillisecondsElapsedThisTurn - startTime) / (nodes + quiesce_nodes)) / 2 + timer.MillisecondsElapsedThisTurn > GetTimeAllowance()) break;
+            startTime = timer.MillisecondsElapsedThisTurn;
         }
 
         //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0.##}ms", -10} depth: {search_depth}");
@@ -88,6 +101,12 @@ public class MyBot : IChessBot
     private int NegaMax(int depth, int alpha, int beta)
     {
         nodes++;
+
+        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.depth >= search_depth - depth && entry.bound == 0)
+        {
+            tt_hits++;
+            return entry.score; // prefer evals from lower depth (and exact bound for now)
+        }
         if (depth >= search_depth) return Quiesce(alpha, beta);
 
         Move? pv = null;
@@ -101,7 +120,11 @@ public class MyBot : IChessBot
             if (score > alpha) { alpha = score; pv = move; }
         }
 
-        if (pv.HasValue) SetPV(pv.Value);
+        if (pv.HasValue)
+        {
+            SetPV(pv.Value, depth); // depth is temporary
+            tt[board.ZobristKey] = new(pv.Value, alpha, search_depth - depth, 0);
+        }
         return alpha;
     }
 
@@ -127,7 +150,7 @@ public class MyBot : IChessBot
 
 
     /* MOVE ORDERING --------------------------------------------------------------------------- */
-    private void SetPV(Move pv_move)
+    private void SetPV(Move pv_move, int depth)
     {
         var moves = GetOrderedLegalMoves();
         var pv_idx = 0;
@@ -135,6 +158,18 @@ public class MyBot : IChessBot
         {
             if (m == pv_move) break;
             pv_idx++;
+        }
+
+        if (pv_idx == moves.Length)
+        {
+            Console.WriteLine("About to crash (couldn't find pv move)");
+            Console.WriteLine(board.CreateDiagram());
+            Console.WriteLine($"\ndepth: {depth}\ntt hit: {tt.ContainsKey(board.ZobristKey)}\npv move: {pv_move}\nmove list ({moves.Length} moves): ");
+            foreach (var move in moves)
+            {
+                Console.Write($"{move}, ");
+            }
+            Console.WriteLine();
         }
 
         var i = 0;
