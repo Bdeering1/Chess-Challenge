@@ -210,15 +210,11 @@ public class MyBot : IChessBot
         //castles: 1
         //captures: 6-14
         //everything else: 20
-
-        //queen promotions are worth the most
-        if (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) return 0;
-        //captures are ordered by the value of the piece they take
-        if (move.IsCapture) return 10 - (int)move.CapturePieceType + (int)move.MovePieceType;
-        //castles are worth 2nd most, after queen promotions
-        if (move.IsCastles) return 1;
-        //everything else is just put after that
-        return 20;
+        return 
+            (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 0 
+            : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType 
+            : move.IsCastles ? 1 
+            : 20;
     }
 
 
@@ -230,7 +226,9 @@ public class MyBot : IChessBot
 
     private int GetTimeAllowance() //TODO: make this change based on opponent time left
     {
-        return timer.GameStartTimeMilliseconds / 40; //average moves in a chess game is 40
+        var plyCount = board.PlyCount / 2; //since we want to input full moves to the function
+        //(based on this curve: https://www.desmos.com/calculator/gee60oepkk)
+        return timer.MillisecondsRemaining / ((int)(59.3 + (72830 - 2330 * plyCount) / (2644 + plyCount * (10 + plyCount))) / 2/*since this calculation is in # of half moves*/);
     }
 
 
