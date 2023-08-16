@@ -41,7 +41,7 @@ public class MyBot : IChessBot
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
     private readonly int[] pawn_modifier = { 0, 0, 1, 0, -1, 0, 0 };
 
-    record struct TTEntry(Move move, int score, int bound, int depth); // bound: 0 = exact, 1 = lower, 2 = upper
+    record struct TTEntry(Move move, int score, int bound, int depth); // bound: 0 = exact, 1 = upper, 2 = lower
     private Dictionary<ulong, TTEntry> tt = new();
 
 
@@ -53,22 +53,14 @@ public class MyBot : IChessBot
         timer = t;
         nodes = quiesce_nodes = tt_hits = 0;
 
-        //Console.WriteLine("\nRegular search:");
-        //search_depth = MAX_DEPTH;
-        //moves_table = new();
-        //int score = NegaMax(0, -99999, 99999);
-        //var reg_delta = timer.MillisecondsElapsedThisTurn;
-        //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} delta: {reg_delta}ms");
-
-        //Console.WriteLine("\nIterative deepening:");
+        Console.WriteLine();
         search_depth = 1;
-        //moves_table = new();
         int startTime = 0;
         while (search_depth <= MAX_DEPTH)
         {
             nodes = quiesce_nodes = tt_hits = 0;
             int score = NegaMax(0, -99999, 99999);
-            //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
+            Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
             //if the next iteration will take too much time, skip it
@@ -76,7 +68,7 @@ public class MyBot : IChessBot
             startTime = timer.MillisecondsElapsedThisTurn;
         }
 
-        Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
+        //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
 
         return GetOrderedLegalMoves()[0];
     }
@@ -87,10 +79,12 @@ public class MyBot : IChessBot
     {
         nodes++;
 
-        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.depth >= search_depth - depth && entry.bound == 0)
-        { //#DEBUG
+        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.depth >= search_depth - depth)
+        {
             tt_hits++; //#DEBUG
-            return entry.score; // prefer evals from lower depth (and exact bound for now)
+            if (entry.bound == 0) return entry.score; // exact score
+            if (entry.bound == 1 && entry.score <= alpha) return alpha; // fail low
+            if (entry.bound == 2 && entry.score >= beta) return beta; // fail high
         }
         if (depth >= search_depth) return Quiesce(alpha, beta);
 
@@ -101,14 +95,19 @@ public class MyBot : IChessBot
             int score = -NegaMax(depth + 1, -beta, -alpha);
             board.UndoMove(move);
 
-            if (score >= beta) return beta;
-            if (score > alpha) { alpha = score; pv = move; }
+            if (score >= beta)
+            {
+                tt[board.ZobristKey] = new(move, beta, search_depth - depth, 2); // score is at LEAST beta (lower bound)
+                return beta;
+            }
+            if (score > alpha) { alpha = score; pv = move; continue; }
+            tt[board.ZobristKey] = new(move, alpha, search_depth - depth, 1); // score is at MOST alpha (upper bound)
         }
 
         if (pv.HasValue)
         {
             SetPV(pv.Value, depth); // depth is temporary
-            tt[board.ZobristKey] = new(pv.Value, alpha, search_depth - depth, 0);
+            tt[board.ZobristKey] = new(pv.Value, alpha, search_depth - depth, 0); // score is EXACTLY alpha (exact bound)
         }
         return alpha;
     }
