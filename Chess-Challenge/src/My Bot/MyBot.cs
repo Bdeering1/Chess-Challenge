@@ -29,7 +29,7 @@ public class MyBot : IChessBot
     private Dictionary<ulong, Move[]> moves_table = new();
     private int nodes;
     private int quiesce_nodes;
-    private int tt_hits;
+    private int tt_hits; //#DEBUG
 
     private int search_depth = 1;
     private readonly int MAX_DEPTH = 15;
@@ -57,12 +57,7 @@ public class MyBot : IChessBot
 
     public Move Think(Board board, Timer timer)
     {
-        if (!logged_side)
-        {
-            if (board.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white");
-            else if (!logged_side) Console.WriteLine("Playing black");
-            logged_side = true;
-        }
+        if (!logged_side) { if (board.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white"); else if (!logged_side) Console.WriteLine("Playing black"); logged_side = true; } //#DEBUG
 
         this.board = board;
         this.timer = timer;
@@ -83,7 +78,7 @@ public class MyBot : IChessBot
         {
             nodes = quiesce_nodes = tt_hits = 0;
             int score = NegaMax(0, -99999, 99999);
-            //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms");
+            //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
             //if the next iteration will take too much time, skip it
@@ -91,8 +86,8 @@ public class MyBot : IChessBot
             startTime = timer.MillisecondsElapsedThisTurn;
         }
 
-        //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0.##}ms", -10} depth: {search_depth}");
-        
+        Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0.##}ms", -10} depth: {search_depth}"); //#DEBUG
+
         return GetOrderedLegalMoves()[0];
     }
 
@@ -104,7 +99,7 @@ public class MyBot : IChessBot
 
         if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.depth >= search_depth - depth && entry.bound == 0)
         {
-            tt_hits++;
+            tt_hits++; //#DEBUG
             return entry.score; // prefer evals from lower depth (and exact bound for now)
         }
         if (depth >= search_depth) return Quiesce(alpha, beta);
@@ -160,24 +155,17 @@ public class MyBot : IChessBot
             pv_idx++;
         }
 
-        if (pv_idx == moves.Length)
-        {
-            Console.WriteLine("About to crash (couldn't find pv move)");
-            Console.WriteLine(board.CreateDiagram());
-            Console.WriteLine($"\ndepth: {depth}\ntt hit: {tt.ContainsKey(board.ZobristKey)}\npv move: {pv_move}\nmove list ({moves.Length} moves): ");
-            foreach (var move in moves)
-            {
-                Console.Write($"{move}, ");
-            }
-            Console.WriteLine();
-        }
+        if (pv_idx == moves.Length) //#DEBUG
+        { //#DEBUG
+            Console.WriteLine("About to crash (couldn't find pv move)"); //#DEBUG
+            Console.WriteLine(board.CreateDiagram()); //#DEBUG
+            Console.WriteLine($"\ndepth: {depth}\ntt hit: {tt.ContainsKey(board.ZobristKey)}\npv move: {pv_move}\nmove list ({moves.Length} moves): "); //#DEBUG
+            foreach (var move in moves) Console.Write($"{move}, "); //#DEBUG
+            Console.WriteLine(); //#DEBUG
+        } //#DEBUG
 
-        var i = 0;
-        while (i < pv_idx)
-        {
-            moves[i + 1] = moves[i];
-            i++;
-        }
+        var i = pv_idx;
+        while (i > 0) moves[i] = moves[--i];
         moves[0] = pv_move;
     }
 
@@ -259,17 +247,16 @@ public class MyBot : IChessBot
         //int mg = 0, eg = 0, phase = 0;
         foreach (bool is_white in new[] { true, false }) //true = white, false = black
         {
-            for (var piece_type = PieceType.Pawn; piece_type < PieceType.King; piece_type++)
+            for (var piece_type = PieceType.Pawn; piece_type++ < PieceType.King;)
             {
                 int piece = (int)piece_type;//, idx;
                 ulong mask = board.GetPieceBitboard(piece_type, is_white);
                 while (mask != 0)
                 {
                     int lsb = BitboardHelper.ClearAndGetIndexOfLSB(ref mask);
-                    if (piece == 5) score -= BitboardHelper.GetNumberOfSetBits(BitboardHelper.GetSliderAttacks(PieceType.Queen, new Square(lsb), board));
                     //phase += piece_phase[piece];
                     //idx = 128 * (piece - 1) + BitboardHelper.ClearAndGetIndexOfLSB(ref mask) ^ (side_to_move ? 56 : 0);
-                    score /*mg*/ += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx);
+                    score /*mg*/ += piece_val[piece];// + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx);
                     //eg += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx + 64);
                 }
             }
@@ -282,9 +269,9 @@ public class MyBot : IChessBot
         //score = (mg * phase + eg * (24 - phase)) / 24; // max phase = 24
 
         /* Mobility Score */
-        score += side_multiplier * GetOrderedLegalMoves().Length;
+        foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
         board.ForceSkipTurn();
-        score += -side_multiplier * GetOrderedLegalMoves().Length;
+        foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += -side_multiplier;
         board.UndoSkipTurn();
 
         return score * side_multiplier;

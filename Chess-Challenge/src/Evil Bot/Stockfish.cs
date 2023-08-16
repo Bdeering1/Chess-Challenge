@@ -10,7 +10,7 @@ public class Stockfish : IChessBot
 
     const string STOCKFISH_BINARY = "stockfish";
     const string MAX_DEPTH = "10";
-    const string SKILL_LEVEL = "10";
+    const string SKILL_LEVEL = "5";
     const string THREADS = "6";
 
     public Move Think(Board board, Timer timer)
