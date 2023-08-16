@@ -98,7 +98,7 @@ public class MyBot : IChessBot
         nodes++;
 
         if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.depth >= search_depth - depth && entry.bound == 0)
-        {
+        { //#DEBUG
             tt_hits++; //#DEBUG
             return entry.score; // prefer evals from lower depth (and exact bound for now)
         }
@@ -149,11 +149,7 @@ public class MyBot : IChessBot
     {
         var moves = GetOrderedLegalMoves();
         var pv_idx = 0;
-        foreach (var m in moves)
-        {
-            if (m == pv_move) break;
-            pv_idx++;
-        }
+        while (moves[pv_idx] != pv_move) pv_idx++;
 
         if (pv_idx == moves.Length) //#DEBUG
         { //#DEBUG
@@ -181,10 +177,7 @@ public class MyBot : IChessBot
             int j = i - 1;
 
             //go down the array, swapping until we reach a spot where we can insert
-            while (j >= 0 && GetPrecedence(moves[j]) > GetPrecedence(move))
-            {
-                moves[j + 1] = moves[j--];
-            }
+            while (j >= 0 && GetPrecedence(moves[j]) > GetPrecedence(move)) moves[j + 1] = moves[j--];
             moves[j + 1] = move; //insert move
         }
 
@@ -256,7 +249,7 @@ public class MyBot : IChessBot
                     int lsb = BitboardHelper.ClearAndGetIndexOfLSB(ref mask);
                     //phase += piece_phase[piece];
                     //idx = 128 * (piece - 1) + BitboardHelper.ClearAndGetIndexOfLSB(ref mask) ^ (side_to_move ? 56 : 0);
-                    score /*mg*/ += piece_val[piece];// + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx);
+                    score /*mg*/ += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx);
                     //eg += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx + 64);
                 }
             }

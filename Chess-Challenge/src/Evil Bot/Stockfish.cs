@@ -10,8 +10,13 @@ public class Stockfish : IChessBot
 
     const string STOCKFISH_BINARY = "stockfish";
     const string MAX_DEPTH = "10";
-    const string SKILL_LEVEL = "5";
     const string THREADS = "6";
+    
+    int skill_level = 20;
+
+    public Stockfish(int skill_level) {
+        this.skill_level = skill_level;
+    }
 
     public Move Think(Board board, Timer timer)
     {
@@ -71,7 +76,7 @@ public class Stockfish : IChessBot
         stockfish.BeginOutputReadLine();
 
         stockfish.StandardInput.WriteLine("setoption name Threads value " + THREADS);
-        stockfish.StandardInput.WriteLine("setoption name Skill Level value " + SKILL_LEVEL);
+        stockfish.StandardInput.WriteLine("setoption name Skill Level value " + skill_level);
         stockfish.StandardInput.WriteLine("position fen " + board.GetFenString());
         stockfish.StandardInput.WriteLine("go depth " + MAX_DEPTH);
 
