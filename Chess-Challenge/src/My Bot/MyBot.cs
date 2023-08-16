@@ -41,26 +41,16 @@ public class MyBot : IChessBot
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
     private readonly int[] pawn_modifier = { 0, 0, 1, 0, -1, 0, 0 };
 
-    struct TTEntry
-    {
-        public Move move;
-        public int score, depth, bound; // bound: 0 = exact, 1 = lower, 2 = upper
-
-        public TTEntry(Move _move, int _score, int _depth, int _bound)
-        {
-            move = _move; score = _score; depth = _depth; bound = _bound;
-        }
-    }
-
+    record struct TTEntry(Move move, int score, int bound, int depth); // bound: 0 = exact, 1 = lower, 2 = upper
     private Dictionary<ulong, TTEntry> tt = new();
 
 
-    public Move Think(Board board, Timer timer)
+    public Move Think(Board b, Timer t)
     {
-        if (!logged_side) { if (board.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white"); else if (!logged_side) Console.WriteLine("Playing black"); logged_side = true; } //#DEBUG
+        if (!logged_side) { if (b.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white"); else if (!logged_side) Console.WriteLine("Playing black"); logged_side = true; } //#DEBUG
 
-        this.board = board;
-        this.timer = timer;
+        board = b;
+        timer = t;
         nodes = quiesce_nodes = tt_hits = 0;
 
         //Console.WriteLine("\nRegular search:");
@@ -86,7 +76,7 @@ public class MyBot : IChessBot
             startTime = timer.MillisecondsElapsedThisTurn;
         }
 
-        Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0.##}ms", -10} depth: {search_depth}"); //#DEBUG
+        Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
 
         return GetOrderedLegalMoves()[0];
     }
@@ -160,8 +150,7 @@ public class MyBot : IChessBot
             Console.WriteLine(); //#DEBUG
         } //#DEBUG
 
-        var i = pv_idx;
-        while (i > 0) moves[i] = moves[--i];
+        while (pv_idx > 0) moves[pv_idx] = moves[--pv_idx];
         moves[0] = pv_move;
     }
 
@@ -170,11 +159,11 @@ public class MyBot : IChessBot
         if (moves_table.TryGetValue(board.ZobristKey, out var moves)) return moves;
 
         moves = board.GetLegalMoves();
-        for (var i = 1; i < moves.Length; i++)
+        for (var i = 1; i < moves.Length;)
         {
             //store the original element for inserting later
             var move = moves[i];
-            int j = i - 1;
+            int j = i++ - 1;
 
             //go down the array, swapping until we reach a spot where we can insert
             while (j >= 0 && GetPrecedence(moves[j]) > GetPrecedence(move)) moves[j + 1] = moves[j--];
@@ -186,24 +175,20 @@ public class MyBot : IChessBot
     }
 
     private int GetPrecedence(Move move) //gets precedence of a move for move ordering {promotions, castles, captures, everything else}
-    {
         //queen promotions: 0
         //castles: 1
         //captures: 6-14
         //everything else: 20
-        return 
+        => 
             (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 0 
             : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType 
             : move.IsCastles ? 1 
             : 20;
-    }
 
 
     /* TIME MANAGEMENT ------------------------------------------------------------------------- */
     private int GetTimeForNextDepth(double timePerNode)
-    {
-        return (int)(Math.Pow(nodes + quiesce_nodes, 1.3) * timePerNode);
-    }
+        => (int)(Math.Pow(nodes + quiesce_nodes, 1.3) * timePerNode);
 
     private int GetTimeAllowance() //TODO: make this change based on opponent time left
     {
@@ -271,7 +256,5 @@ public class MyBot : IChessBot
     }
 
     private int GetPstVal(int idx)
-    {
-        return 0;
-    }
+        => 0;
 }
