@@ -17,10 +17,10 @@ using System.Collections.Generic;
  * Interesting looking bots:
  *  - https://github.com/nathanWolo/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
  *  - https://github.com/dorinon/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
- *  - https://github.com/Tjalle-S/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ *  - https://github.com/Tjalle-S/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs 
  *  - https://github.com/Sidhant-Roymoulik/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
  *  - https://github.com/outercloudstudio/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
- *  - https://github.com/Nitish-Naineni/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ *  - https://github.com/Nitish-Naineni/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs 
  */
 public class MyBot : IChessBot
 {
@@ -30,10 +30,12 @@ public class MyBot : IChessBot
     private int nodes;
     private int quiesce_nodes;
     private int tt_hits; //#DEBUG
+    //private int timeForLastDepth;
+    private int timeAllowed;
 
     private int search_depth = 1;
     private readonly int MAX_DEPTH = 15;
-
+    
     private bool logged_side = false;
     private double moves = 0;
 
@@ -52,20 +54,25 @@ public class MyBot : IChessBot
         board = b;
         timer = t;
         nodes = quiesce_nodes = tt_hits = 0;
+        //timeForLastDepth = 1;
+        timeAllowed = GetTimeAllowance();
 
-        Console.WriteLine();
+        Console.WriteLine(); //#DEBUG
         search_depth = 1;
-        int startTime = 0;
+        //int startTime = 0;
         while (search_depth <= MAX_DEPTH)
         {
             nodes = quiesce_nodes = tt_hits = 0;
             int score = NegaMax(0, -99999, 99999);
+            if (timer.MillisecondsElapsedThisTurn > timeAllowed) break; //#DEBUG
             Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
             //if the next iteration will take too much time, skip it
-            if (GetTimeForNextDepth((double)(timer.MillisecondsElapsedThisTurn - startTime) / (nodes + quiesce_nodes)) / 2 + timer.MillisecondsElapsedThisTurn > GetTimeAllowance()) break;
-            startTime = timer.MillisecondsElapsedThisTurn;
+            //var timeForThisDepth = timer.MillisecondsElapsedThisTurn - startTime;
+            //if (GetTimeForNextDepth(timeForThisDepth, timeForLastDepth) + timer.MillisecondsElapsedThisTurn > GetTimeAllowance()) { break; }
+            //startTime = timer.MillisecondsElapsedThisTurn;
+            //timeForLastDepth = Math.Max(timeForThisDepth, 1);
         }
 
         //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
@@ -77,6 +84,9 @@ public class MyBot : IChessBot
     /* SEARCH ---------------------------------------------------------------------------------- */
     private int NegaMax(int depth, int alpha, int beta)
     {
+        if (timer.MillisecondsElapsedThisTurn > timeAllowed) return -100000;
+        
+
         nodes++;
 
         if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.depth >= search_depth - depth)
@@ -186,10 +196,10 @@ public class MyBot : IChessBot
 
 
     /* TIME MANAGEMENT ------------------------------------------------------------------------- */
-    private int GetTimeForNextDepth(double timePerNode)
-        => (int)(Math.Pow(nodes + quiesce_nodes, 1.3) * timePerNode);
+    //private int GetTimeForNextDepth(int timeForThisDepth, int timeForLastDepth)
+    //    => (timeForThisDepth / timeForLastDepth) * timeForThisDepth;
 
-    private int GetTimeAllowance() //TODO: make this change based on opponent time left
+    private int GetTimeAllowance()
     {
         var plyCount = board.PlyCount / 2; //since we want to input full moves to the function
         //(based on this curve: https://www.desmos.com/calculator/gee60oepkk)
