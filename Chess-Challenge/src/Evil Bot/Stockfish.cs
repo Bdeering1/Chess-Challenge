@@ -5,17 +5,18 @@ using System.IO;
 
 public class Stockfish : IChessBot
 {
-    const double FISH_RATIO = 1;
     const int MS_PER_MOVE = 500;
 
     const string STOCKFISH_BINARY = "stockfish";
     const string MAX_DEPTH = "10";
     const string THREADS = "6";
     
+    double fish_ratio;
     int skill_level = 20;
 
-    public Stockfish(int skill_level) {
+    public Stockfish(int skill_level, double fish_ratio = 1) {
         this.skill_level = skill_level;
+        this.fish_ratio = fish_ratio;
     }
 
     public Move Think(Board board, Timer timer)
@@ -23,8 +24,9 @@ public class Stockfish : IChessBot
         Move bestMove = Move.NullMove;
 
         var rand = new Random();
-        if (rand.NextDouble() > FISH_RATIO)
+        if (rand.NextDouble() > fish_ratio)
         {
+            System.Threading.Thread.Sleep(MS_PER_MOVE - timer.MillisecondsElapsedThisTurn);
             Move[] all_moves = board.GetLegalMoves();
             return all_moves[rand.Next(0, all_moves.Length)];
         }

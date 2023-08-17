@@ -57,7 +57,7 @@ public class MyBot : IChessBot
         //timeForLastDepth = 1;
         timeAllowed = GetTimeAllowance();
 
-        Console.WriteLine(); //#DEBUG
+        //Console.WriteLine(); //#DEBUG
         search_depth = 1;
         //int startTime = 0;
         while (search_depth <= MAX_DEPTH)
@@ -65,7 +65,7 @@ public class MyBot : IChessBot
             nodes = quiesce_nodes = tt_hits = 0;
             int score = NegaMax(0, -99999, 99999);
             if (timer.MillisecondsElapsedThisTurn > timeAllowed) break; //#DEBUG
-            Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
+            //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
             //if the next iteration will take too much time, skip it

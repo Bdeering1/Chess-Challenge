@@ -20,9 +20,10 @@ namespace ChessChallenge.Application
             Human,
             MyBot,
             EvilBot,
-            Stockfish5,
-            Stockfish10,
-            Stockfish15
+            MostlyStockfish,
+            Stockfish4,
+            Stockfish8,
+            Stockfish12
         }
 
         // Game state
@@ -31,7 +32,7 @@ namespace ChessChallenge.Application
         bool isPlaying;
         Board board;
         public ChessPlayer PlayerWhite { get; private set; }
-        public ChessPlayer PlayerBlack {get;private set;}
+        public ChessPlayer PlayerBlack { get; private set; }
 
         float lastMoveMadeTime;
         bool isWaitingToPlayMove;
@@ -43,7 +44,7 @@ namespace ChessChallenge.Application
         readonly string[] botMatchStartFens;
         int botMatchGameIndex;
         public BotMatchStats BotStatsA { get; private set; }
-        public BotMatchStats BotStatsB {get;private set;}
+        public BotMatchStats BotStatsB { get; private set; }
         bool botAPlaysWhite;
 
 
@@ -58,6 +59,10 @@ namespace ChessChallenge.Application
         readonly int tokenCount;
         readonly int debugTokenCount;
         readonly StringBuilder pgns;
+        public bool fastForward;
+
+        int totalMovesPlayed = 0;
+        public int trueTotalMovesPlayed = 0;
 
         public ChallengeController()
         {
@@ -70,10 +75,11 @@ namespace ChessChallenge.Application
             boardUI = new BoardUI();
             board = new Board();
             pgns = new();
+            fastForward = false;
 
             BotStatsA = new BotMatchStats("IBot");
             BotStatsB = new BotMatchStats("IBot");
-            botMatchStartFens = FileHelper.ReadResourceFile("Fens.txt").Split('\n').Where(fen => fen.Length > 0).ToArray();
+            botMatchStartFens = FileHelper.ReadResourceFile("Fens.txt").Split('\n');//.Where(fen => fen.Length > 0).ToArray();
             botTaskWaitHandle = new AutoResetEvent(false);
 
             StartNewGame(PlayerType.Human, PlayerType.MyBot);
@@ -83,7 +89,7 @@ namespace ChessChallenge.Application
         {
             // End any ongoing game
             EndGame(GameResult.DrawByArbiter, log: false, autoStartNextBotMatch: false);
-            gameID = rng.Next();
+            gameID++;
 
             // Stop prev task and create a new one
             if (RunBotsOnSeparateThread)
@@ -146,6 +152,8 @@ namespace ChessChallenge.Application
 
         Move GetBotMove()
         {
+            totalMovesPlayed++;
+
             API.Board botBoard = new(board);
             try
             {
@@ -212,10 +220,11 @@ namespace ChessChallenge.Application
             return type switch
             {
                 PlayerType.MyBot => new ChessPlayer(new MyBot(), type, GameDurationMilliseconds),
-                PlayerType.EvilBot => new ChessPlayer(new Evilbot(), type, GameDurationMilliseconds),
-                PlayerType.Stockfish5 => new ChessPlayer(new Stockfish(5), type, GameDurationMilliseconds),
-                PlayerType.Stockfish10 => new ChessPlayer(new Stockfish(10), type, GameDurationMilliseconds),
-                PlayerType.Stockfish15 => new ChessPlayer(new Stockfish(15), type, GameDurationMilliseconds),
+                PlayerType.EvilBot => new ChessPlayer(new EvilBot(), type, GameDurationMilliseconds),
+                PlayerType.MostlyStockfish => new ChessPlayer(new Stockfish(20, 0.90), type, GameDurationMilliseconds),
+                PlayerType.Stockfish4 => new ChessPlayer(new Stockfish(4), type, GameDurationMilliseconds),
+                PlayerType.Stockfish8 => new ChessPlayer(new Stockfish(8), type, GameDurationMilliseconds),
+                PlayerType.Stockfish12 => new ChessPlayer(new Stockfish(12), type, GameDurationMilliseconds),
                 _ => new ChessPlayer(new HumanPlayer(boardUI), type)
             };
         }
@@ -279,15 +288,17 @@ namespace ChessChallenge.Application
 
         void EndGame(GameResult result, bool log = true, bool autoStartNextBotMatch = true)
         {
+            trueTotalMovesPlayed += totalMovesPlayed;
+            totalMovesPlayed = 0;
+
             if (isPlaying)
             {
                 isPlaying = false;
                 isWaitingToPlayMove = false;
-                gameID = -1;
 
                 if (log)
                 {
-                    Log("Game Over: " + result, false, ConsoleColor.Blue);
+                    Log("Game Over: " + result + " Match: " + CurrGameNumber, false, ConsoleColor.Blue);
                 }
 
                 string pgn = PGNCreator.CreatePGN(board, result, GetPlayerName(PlayerWhite), GetPlayerName(PlayerBlack));
@@ -303,16 +314,25 @@ namespace ChessChallenge.Application
                     if (botMatchGameIndex < numGamesToPlay && autoStartNextBotMatch)
                     {
                         botAPlaysWhite = !botAPlaysWhite;
-                        const int startNextGameDelayMs = 600;
-                        System.Timers.Timer autoNextTimer = new(startNextGameDelayMs);
-                        int originalGameID = gameID;
-                        autoNextTimer.Elapsed += (s, e) => AutoStartNextBotMatchGame(originalGameID, autoNextTimer);
-                        autoNextTimer.AutoReset = false;
-                        autoNextTimer.Start();
+
+                        if (fastForward)
+                        {
+                            StartNewGame(PlayerBlack.PlayerType, PlayerWhite.PlayerType);
+                        }
+                        else
+                        {
+                            const int startNextGameDelayMs = 600;
+                            System.Timers.Timer autoNextTimer = new(startNextGameDelayMs);
+                            int originalGameID = gameID;
+                            autoNextTimer.Elapsed += (s, e) => AutoStartNextBotMatchGame(originalGameID, autoNextTimer);
+                            autoNextTimer.AutoReset = false;
+                            autoNextTimer.Start();
+                        }
 
                     }
                     else if (autoStartNextBotMatch)
                     {
+                        fastForward = false;
                         Log("Match finished", false, ConsoleColor.Blue);
                     }
                 }
