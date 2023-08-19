@@ -46,6 +46,7 @@ public class MyBot : IChessBot
     record struct TTEntry(Move move, int score, int bound, int depth); // bound: 0 = exact, 1 = upper, 2 = lower
     private Dictionary<ulong, TTEntry> tt = new();
 
+    private ulong[] packedPsts = PstPacker.Generate();
 
     public Move Think(Board b, Timer t)
     {
@@ -242,8 +243,14 @@ public class MyBot : IChessBot
                 {
                     int lsb = BitboardHelper.ClearAndGetIndexOfLSB(ref mask);
                     //phase += piece_phase[piece];
-                    //idx = 128 * (piece - 1) + BitboardHelper.ClearAndGetIndexOfLSB(ref mask) ^ (side_to_move ? 56 : 0);
-                    score /*mg*/ += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx);
+
+                    //this is kind of cancer maybe we could shorten this
+                    //int rank = lsb / 8;
+                    //int file = lsb % 8;
+                    //file = file > 3 ? 7 - file : file;
+                    //if (is_white) file = 3 - file;
+
+                    score /*mg*/ += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece-1);
                     //eg += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx + 64);
                 }
             }
@@ -264,6 +271,13 @@ public class MyBot : IChessBot
         return score * side_multiplier;
     }
 
-    private int GetPstVal(int idx)
-        => 0;
+    private int GetPstVal(int lsb, int type)
+    {
+        var rank = lsb / 8;
+        var file = lsb % 8;
+        file = file > 3 ? 7 - file : file;
+        if (board.IsWhiteToMove) file = 3 - file;
+        Console.WriteLine($"type: {type + 1} lsb: {lsb}, pst: {type * 4 + file} rank: {lsb / 8}, file: {file}, pst_val: {(sbyte)(packedPsts[type * 4 + file > 3 ? 7 - file : file] >> lsb) & 0xFF}"); //#DEBUG
+        return (sbyte)(packedPsts[type * 4 + file] >> (rank * 8)) & 0xFF;
+    }
 }
