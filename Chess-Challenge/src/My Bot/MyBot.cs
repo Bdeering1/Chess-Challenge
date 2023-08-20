@@ -235,7 +235,7 @@ public class MyBot : IChessBot
         //int mg = 0, eg = 0, phase = 0;
         foreach (bool is_white in new[] { true, false }) //true = white, false = black
         {
-            for (var piece_type = PieceType.Pawn; piece_type++ < PieceType.King;)
+            for (var piece_type = PieceType.None; piece_type++ < PieceType.King;)
             {
                 int piece = (int)piece_type;//, idx;
                 ulong mask = board.GetPieceBitboard(piece_type, is_white);
@@ -244,13 +244,13 @@ public class MyBot : IChessBot
                     int lsb = BitboardHelper.ClearAndGetIndexOfLSB(ref mask);
                     //phase += piece_phase[piece];
 
-                    //this is kind of cancer maybe we could shorten this
-                    //int rank = lsb / 8;
-                    //int file = lsb % 8;
-                    //file = file > 3 ? 7 - file : file;
-                    //if (is_white) file = 3 - file;
+                    // this is kind of cancer maybe we could shorten this
+                    // int rank = lsb / 8;
+                    // int file = lsb % 8;
+                    // file = file > 3 ? 7 - file : file;
+                    // if (is_white) file = 3 - file;
 
-                    score /*mg*/ += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece-1);
+                    score /*mg*/ += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white);
                     //eg += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx + 64);
                 }
             }
@@ -271,13 +271,11 @@ public class MyBot : IChessBot
         return score * side_multiplier;
     }
 
-    private int GetPstVal(int lsb, int type)
+    private int GetPstVal(int lsb, int type, bool is_white)
     {
-        var rank = lsb / 8;
         var file = lsb % 8;
-        file = file > 3 ? 7 - file : file;
-        if (board.IsWhiteToMove) file = 3 - file;
-        Console.WriteLine($"type: {type + 1} lsb: {lsb}, pst: {type * 4 + file} rank: {lsb / 8}, file: {file}, pst_val: {(sbyte)(packedPsts[type * 4 + file > 3 ? 7 - file : file] >> lsb) & 0xFF}"); //#DEBUG
-        return (sbyte)(packedPsts[type * 4 + file] >> (rank * 8)) & 0xFF;
+        var rank = lsb / 8;
+        Console.WriteLine($"type: {type + 1} lsb: {lsb}, rank: {rank}, file: {(file > 3 ? 7 - file : file)}, pst: {type * 4 + (file)}, pst_val: {(sbyte)((packedPsts[type * 4 + (file > 3 ? 7 - file : file)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF)}"); //#DEBUG
+        return (sbyte)((packedPsts[type * 4 + file > 3 ? 7 - file : file] >> (is_white ? 7 - rank : rank) * 8) & 0xFF);
     }
 }

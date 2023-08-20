@@ -165,8 +165,8 @@ public class PstPacker
         Console.WriteLine("Packed table:\n");
         ulong[] packedData = PackData(table);
 
-        //Console.WriteLine("Unpacked table:\n");
-        //UnpackData(packedData);
+        // Console.WriteLine("Unpacked table:\n");
+        // UnpackData(packedData);
 
         return packedData;
     }
@@ -215,14 +215,14 @@ public class PstPacker
         Console.WriteLine("Count: " + tablesToUnpack.Length);
 
         // Print tables to middlegame scores
-        for (int type = 0; type < tablesToUnpack.Length/tableWidth; type++)
+        for (int type = 0; type < tablesToUnpack.Length / tableWidth; type++)
         {
             Console.WriteLine("\n\nTable for type: " + (ScoreType)type);
             for (int rank = 0; rank < tableHeight; rank++)
             {
                 for (int file = 0; file < tableWidth*2; file++)
                 {
-                    Console.Write($"{GetSquareBonus(tablesToUnpack, type, true, rank, file > 3 ? 7-file : file),4}" + ", ");
+                    Console.Write($"{GetSquareBonus(tablesToUnpack, type, true, rank, file > 3 ? 7 - file : file), 4}" + ", ");
                 }
                 Console.WriteLine();
             }
@@ -232,8 +232,7 @@ public class PstPacker
     private static int GetSquareBonus(ulong[] tables, int type, bool isWhite, int rank, int file)
     {
         // Mirror vertically for white pieces, since piece arrays are flipped vertically
-        if (!isWhite)
-            file = 3 - file;
+        //if (!isWhite) file = 3 - file;
 
         // Grab the correct byte representing the value
         sbyte squareValue = unchecked((sbyte)((tables[(type * tableWidth) + file] >> rank * 8) & 0xFF));
