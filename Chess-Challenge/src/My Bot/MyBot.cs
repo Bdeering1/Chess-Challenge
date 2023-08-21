@@ -48,12 +48,12 @@ public class MyBot : IChessBot
 
     private ulong[] packedPsts = PstPacker.Generate();
 
-    public Move Think(Board b, Timer t)
+    public Move Think(Board _board, Timer _timer)
     {
-        if (!logged_side) { if (b.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white"); else if (!logged_side) Console.WriteLine("Playing black"); logged_side = true; } //#DEBUG
+        if (!logged_side) { if (_board.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white"); else if (!logged_side) Console.WriteLine("Playing black"); logged_side = true; } //#DEBUG
 
-        board = b;
-        timer = t;
+        board = _board;
+        timer = _timer;
         nodes = quiesce_nodes = tt_hits = 0;
         //timeForLastDepth = 1;
         timeAllowed = GetTimeAllowance();
@@ -78,6 +78,9 @@ public class MyBot : IChessBot
 
         //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
 
+        // var move = GetOrderedLegalMoves()[0]; //#DEBUG
+        // Console.WriteLine($"Move: {move} PST Val (Move.To): {GetPstVal(move.TargetSquare.Index, (int)move.MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
+
         return GetOrderedLegalMoves()[0];
     }
 
@@ -85,9 +88,8 @@ public class MyBot : IChessBot
     /* SEARCH ---------------------------------------------------------------------------------- */
     private int NegaMax(int depth, int alpha, int beta)
     {
-        if (timer.MillisecondsElapsedThisTurn > timeAllowed) return -100000;
+        if (timer.MillisecondsElapsedThisTurn > timeAllowed) return 11111;
         
-
         nodes++;
 
         if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.depth >= search_depth - depth)
@@ -197,14 +199,11 @@ public class MyBot : IChessBot
 
 
     /* TIME MANAGEMENT ------------------------------------------------------------------------- */
-    //private int GetTimeForNextDepth(int timeForThisDepth, int timeForLastDepth)
-    //    => (timeForThisDepth / timeForLastDepth) * timeForThisDepth;
-
     private int GetTimeAllowance()
     {
-        var plyCount = board.PlyCount / 2; //since we want to input full moves to the function
+        var move_count = board.PlyCount / 2; //since we want to input full moves to the function
         //(based on this curve: https://www.desmos.com/calculator/gee60oepkk)
-        return timer.MillisecondsRemaining / ((int)(59.3 + (72830 - 2330 * plyCount) / (2644 + plyCount * (10 + plyCount))) / 2/*since this calculation is in # of half moves*/);
+        return timer.MillisecondsRemaining / ((60 + (72830 - 2330 * move_count) / (2644 + move_count * (10 + move_count))) / 2/*since this calculation is in # of half moves*/);
     }
 
 
@@ -232,7 +231,7 @@ public class MyBot : IChessBot
             side_multiplier = board.IsWhiteToMove ? 1 : -1,
             pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
 
-        //int mg = 0, eg = 0, phase = 0;
+        int mg = 0, eg = 0, phase = 0;
         foreach (bool is_white in new[] { true, false }) //true = white, false = black
         {
             for (var piece_type = PieceType.None; piece_type++ < PieceType.King;)
@@ -242,40 +241,34 @@ public class MyBot : IChessBot
                 while (mask != 0)
                 {
                     int lsb = BitboardHelper.ClearAndGetIndexOfLSB(ref mask);
-                    //phase += piece_phase[piece];
+                    phase += piece_phase[piece];
 
-                    // this is kind of cancer maybe we could shorten this
-                    // int rank = lsb / 8;
-                    // int file = lsb % 8;
-                    // file = file > 3 ? 7 - file : file;
-                    // if (is_white) file = 3 - file;
-
-                    score /*mg*/ += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white);
-                    //eg += piece_val[piece] + pawn_modifier[piece] * pawns_count;// + GetPstVal(idx + 64);
+                    mg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, false);
+                    eg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, true);
                 }
             }
 
-            score = -score;
-            //mg = -mg;
-            //eg = -eg;
+            //score = -score;
+            mg = -mg;
+            eg = -eg;
         }
 
-        //score = (mg * phase + eg * (24 - phase)) / 24; // max phase = 24
+        score = (mg * phase + eg * (24 - phase)) / 24; // max phase = 24
 
         /* Mobility Score */
         foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
         board.ForceSkipTurn();
-        foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += -side_multiplier;
+        foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score -= side_multiplier;
         board.UndoSkipTurn();
 
         return score * side_multiplier;
     }
 
-    private int GetPstVal(int lsb, int type, bool is_white)
+    private int GetPstVal(int lsb, int type, bool is_white, bool endgame, bool debug = false)
     {
         var file = lsb % 8;
         var rank = lsb / 8;
-        Console.WriteLine($"type: {type + 1} lsb: {lsb}, rank: {rank}, file: {(file > 3 ? 7 - file : file)}, pst: {type * 4 + (file)}, pst_val: {(sbyte)((packedPsts[type * 4 + (file > 3 ? 7 - file : file)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF)}"); //#DEBUG
-        return (sbyte)((packedPsts[type * 4 + file > 3 ? 7 - file : file] >> (is_white ? 7 - rank : rank) * 8) & 0xFF);
+        if (debug) Console.WriteLine($"type: {type + 1} lsb: {lsb}, rank: {rank + 1}, file: {file + 1}, pst: {type * 4 + (file)}, pst_val: {(sbyte)((packedPsts[type * 4 + (file > 3 ? 7 - file : file)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF)}"); //#DEBUG
+        return (sbyte)((packedPsts[type * 4 + (file > 3 ? 7 - file : file) + (endgame ? 6 : 0)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF);
     }
 }
