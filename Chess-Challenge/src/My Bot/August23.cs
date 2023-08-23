@@ -48,21 +48,21 @@ public class August23 : IChessBot
 
     public Move Think(Board _board, Timer _timer)
     {
-        if (!logged_side) { if (_board.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white"); else if (!logged_side) Console.WriteLine("Playing black"); logged_side = true; } //#DEBUG
+        //if (!logged_side) { if (_board.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white"); else if (!logged_side) Console.WriteLine("Playing black"); logged_side = true; } //#DEBUG
 
         board = _board;
         timer = _timer;
         nodes = quiesce_nodes = tt_hits = 0;
         timeAllowed = GetTimeAllowance();
 
-        Console.WriteLine(); //#DEBUG
+        //Console.WriteLine(); //#DEBUG
         search_depth = 1;
         //int startTime = 0;
         while (search_depth <= MAX_DEPTH)
         {
             nodes = quiesce_nodes = tt_hits = 0;
             int score = NegaMax(0, -99999, 99999);
-            Console.WriteLine($"PV {GetOrderedLegalMoves()[0]} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
+            //Console.WriteLine($"PV {GetOrderedLegalMoves()[0]} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
             if (timer.MillisecondsElapsedThisTurn > timeAllowed) break; //#DEBUG
