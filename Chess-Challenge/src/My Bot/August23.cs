@@ -1,4 +1,4 @@
-﻿using ChessChallenge.API;
+using ChessChallenge.API;
 using System;
 using System.Collections.Generic;
 
@@ -21,7 +21,7 @@ using System.Collections.Generic;
  *  - https://github.com/Tjalle-S/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs 
  *  - https://github.com/Sidhant-Roymoulik/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
  */
-public class MyBot : IChessBot
+public class August23 : IChessBot
 {
     private Board board;
     private Timer timer;
@@ -163,7 +163,16 @@ public class MyBot : IChessBot
         var moves = GetOrderedLegalMoves();
         var pv_idx = 0;
         while (moves[pv_idx] != pv_move) pv_idx++;
-        
+
+        if (pv_idx == moves.Length) //#DEBUG
+        { //#DEBUG
+            Console.WriteLine("About to crash (couldn't find pv move)"); //#DEBUG
+            Console.WriteLine(board.CreateDiagram()); //#DEBUG
+            Console.WriteLine($"\ndepth: {depth}\ntt hit: {tt.ContainsKey(board.ZobristKey)}\npv move: {pv_move}\nmove list ({moves.Length} moves): "); //#DEBUG
+            foreach (var move in moves) Console.Write($"{move}, "); //#DEBUG
+            Console.WriteLine(); //#DEBUG
+        } //#DEBUG
+
         while (pv_idx > 0) moves[pv_idx] = moves[--pv_idx];
         moves[0] = pv_move;
     }

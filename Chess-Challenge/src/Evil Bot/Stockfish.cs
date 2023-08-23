@@ -53,7 +53,7 @@ public class Stockfish : IChessBot
                 info depth 10 seldepth 10 multipv 1 score cp 50 nodes 7548 nps 943500 hashfull 2 tbhits 0 time 8 pv e2e4 e7e5 g1f3 g8f6 b1c3 d7d6 d2d4
                 bestmove e2e4 ponder e7e5
             */
-            if (args.Data.StartsWith("bestmove"))
+            if (args != null && args.Data != null && args.Data.StartsWith("bestmove"))
             {
                 bestMove = new Move(args.Data.Split(' ')[1], board);
                 stockfish.StandardInput.WriteLine("quit");

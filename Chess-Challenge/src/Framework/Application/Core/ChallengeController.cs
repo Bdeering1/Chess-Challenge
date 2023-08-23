@@ -23,7 +23,8 @@ namespace ChessChallenge.Application
             MostlyStockfish,
             Stockfish4,
             Stockfish8,
-            Stockfish12
+            Stockfish12,
+            August23
         }
 
         // Game state
@@ -225,6 +226,7 @@ namespace ChessChallenge.Application
                 PlayerType.Stockfish4 => new ChessPlayer(new Stockfish(4), type, GameDurationMilliseconds),
                 PlayerType.Stockfish8 => new ChessPlayer(new Stockfish(8), type, GameDurationMilliseconds),
                 PlayerType.Stockfish12 => new ChessPlayer(new Stockfish(12), type, GameDurationMilliseconds),
+                PlayerType.August23 => new ChessPlayer(new August23(), type, GameDurationMilliseconds),
                 _ => new ChessPlayer(new HumanPlayer(boardUI), type)
             };
         }
