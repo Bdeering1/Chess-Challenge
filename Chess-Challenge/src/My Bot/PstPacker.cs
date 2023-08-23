@@ -196,16 +196,16 @@ public class PstPacker
             }
         }
 
-        Console.WriteLine("{ ");
-        for (int set = 0; set < tablesToPack.Count; set++)
-        {
-            for (int file = 0; file < tableWidth; file++)
-            {
-                Console.Write($"0x{packedData[(set * tableWidth) + file]:X}, ");
-            }
-            Console.WriteLine();
-        }
-        Console.WriteLine("};");
+        // Console.WriteLine("{ ");
+        // for (int set = 0; set < tablesToPack.Count; set++)
+        // {
+        //     for (int file = 0; file < tableWidth; file++)
+        //     {
+        //         Console.Write($"0x{packedData[(set * tableWidth) + file]:X}, ");
+        //     }
+        //     Console.WriteLine();
+        // }
+        // Console.WriteLine("};");
 
         return packedData;
     }

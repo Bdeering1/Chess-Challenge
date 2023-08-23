@@ -26,11 +26,9 @@ public class MyBot : IChessBot
 {
     private Board board;
     private Timer timer;
-    private Dictionary<ulong, Move[]> moves_table = new();
     private int nodes;
     private int quiesce_nodes;
     private int tt_hits; //#DEBUG
-    //private int timeForLastDepth;
     private int timeAllowed;
 
     private int search_depth = 1;
@@ -43,8 +41,9 @@ public class MyBot : IChessBot
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
     private readonly int[] pawn_modifier = { 0, 0, 1, 0, -1, 0, 0 };
 
-    record struct TTEntry(Move move, int score, int bound, int depth); // bound: 0 = exact, 1 = upper, 2 = lower
-    private Dictionary<ulong, TTEntry> tt = new();
+    private Dictionary<ulong, Move[]> moves_table = new();
+    //record struct TTEntry(Move move, int score, int bound, int depth); // bound: 0 = exact, 1 = upper, 2 = lower
+    private Dictionary<ulong, (int, int, int)> tt = new(); // (score, bound, depth), bound -> 0 = exact, 1 = upper, 2 = lower
 
     private ulong[] packedPsts = PstPacker.Generate();
 
@@ -55,10 +54,9 @@ public class MyBot : IChessBot
         board = _board;
         timer = _timer;
         nodes = quiesce_nodes = tt_hits = 0;
-        //timeForLastDepth = 1;
         timeAllowed = GetTimeAllowance();
 
-        //Console.WriteLine(); //#DEBUG
+        Console.WriteLine(); //#DEBUG
         search_depth = 1;
         //int startTime = 0;
         while (search_depth <= MAX_DEPTH)
@@ -66,7 +64,7 @@ public class MyBot : IChessBot
             nodes = quiesce_nodes = tt_hits = 0;
             int score = NegaMax(0, -99999, 99999);
             if (timer.MillisecondsElapsedThisTurn > timeAllowed) break; //#DEBUG
-            //Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
+            Console.WriteLine($"score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
             //if the next iteration will take too much time, skip it
@@ -92,12 +90,12 @@ public class MyBot : IChessBot
         
         nodes++;
 
-        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.depth >= search_depth - depth)
+        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item3 >= search_depth - depth) // Item1 -> score, Item2 -> bouond, Item3 -> depth
         {
             tt_hits++; //#DEBUG
-            if (entry.bound == 0) return entry.score; // exact score
-            if (entry.bound == 1 && entry.score <= alpha) return alpha; // fail low
-            if (entry.bound == 2 && entry.score >= beta) return beta; // fail high
+            if (entry.Item2 == 0) return entry.Item1; // exact score
+            if (entry.Item2 == 1 && entry.Item1 <= alpha) return alpha; // fail low
+            if (entry.Item2 == 2 && entry.Item1 >= beta) return beta; // fail high
         }
         if (depth >= search_depth) return Quiesce(alpha, beta);
 
@@ -110,17 +108,17 @@ public class MyBot : IChessBot
 
             if (score >= beta)
             {
-                tt[board.ZobristKey] = new(move, beta, search_depth - depth, 2); // score is at LEAST beta (lower bound)
+                tt[board.ZobristKey] = (beta, search_depth - depth, 2); // score is at LEAST beta (lower bound)
                 return beta;
             }
             if (score > alpha) { alpha = score; pv = move; continue; }
-            tt[board.ZobristKey] = new(move, alpha, search_depth - depth, 1); // score is at MOST alpha (upper bound)
+            tt[board.ZobristKey] = (alpha, search_depth - depth, 1); // score is at MOST alpha (upper bound)
         }
 
         if (pv.HasValue)
         {
             SetPV(pv.Value, depth); // depth is temporary
-            tt[board.ZobristKey] = new(pv.Value, alpha, search_depth - depth, 0); // score is EXACTLY alpha (exact bound)
+            tt[board.ZobristKey] = (alpha, search_depth - depth, 0); // score is EXACTLY alpha (exact bound)
         }
         return alpha;
     }
@@ -203,7 +201,7 @@ public class MyBot : IChessBot
     {
         var move_count = board.PlyCount / 2; //since we want to input full moves to the function
         //(based on this curve: https://www.desmos.com/calculator/gee60oepkk)
-        return timer.MillisecondsRemaining / ((60 + (72830 - 2330 * move_count) / (2644 + move_count * (10 + move_count))) / 2/*since this calculation is in # of half moves*/);
+        return timer.MillisecondsRemaining / ((60 + (72830 - 2330 * move_count) / (2644 + move_count * (10 + move_count))) / 2 /*since this calculation is in # of half moves*/);
     }
 
 
@@ -243,32 +241,34 @@ public class MyBot : IChessBot
                     int lsb = BitboardHelper.ClearAndGetIndexOfLSB(ref mask);
                     phase += piece_phase[piece];
 
-                    mg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, false);
-                    eg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, true);
+                    mg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 0);
+                    eg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 6);
                 }
             }
 
-            //score = -score;
             mg = -mg;
             eg = -eg;
         }
 
+        mg += 10 * side_multiplier;
         score = (mg * phase + eg * (24 - phase)) / 24; // max phase = 24
 
         /* Mobility Score */
-        foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
+        //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
+        //score += GetOrderedLegalMoves().Length;
         board.ForceSkipTurn();
-        foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score -= side_multiplier;
+        //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score -= side_multiplier;
+        //score -= GetOrderedLegalMoves().Length;
         board.UndoSkipTurn();
 
         return score * side_multiplier;
     }
 
-    private int GetPstVal(int lsb, int type, bool is_white, bool endgame, bool debug = false)
+    private int GetPstVal(int lsb, int type, bool is_white, int table_shift, bool debug = false) // table_shift - should be either 0 (mg PSTs) or 6 (eg PSTs)
     {
         var file = lsb % 8;
         var rank = lsb / 8;
         if (debug) Console.WriteLine($"type: {type + 1} lsb: {lsb}, rank: {rank + 1}, file: {file + 1}, pst: {type * 4 + (file)}, pst_val: {(sbyte)((packedPsts[type * 4 + (file > 3 ? 7 - file : file)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF)}"); //#DEBUG
-        return (sbyte)((packedPsts[type * 4 + (file > 3 ? 7 - file : file) + (endgame ? 6 : 0)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF);
+        return (sbyte)((packedPsts[type * 4 + (file > 3 ? 7 - file : file) + table_shift] >> (is_white ? 7 - rank : rank) * 8) & 0xFF);
     }
 }
