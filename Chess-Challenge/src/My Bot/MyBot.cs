@@ -42,7 +42,7 @@ public class MyBot : IChessBot
 
     private Dictionary<ulong, Move[]> moves_table = new();
     //record struct TTEntry(Move move, int score, int bound, int depth); // bound: 0 = exact, 1 = upper, 2 = lower
-    private Dictionary<ulong, (int, int, int)> tt = new(); // (score, bound, depth), bound -> 0 = exact, 1 = upper, 2 = lower
+    private Dictionary<ulong, (Move, int, int, int)> tt = new(); // (move, score, bound, depth), bound -> 0 = exact, 1 = upper, 2 = lower
 
     private ulong[] packed_psts = PstPacker.Generate();
 
@@ -53,11 +53,10 @@ public class MyBot : IChessBot
         board = _board;
         timer = _timer;
         nodes = quiesce_nodes = tt_hits = 0; //#DEBUG
-        timeAllowed = GetTimeAllowance();
+        timeAllowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
 
         Console.WriteLine(); //#DEBUG
         search_depth = 1;
-        //int startTime = 0;
         while (search_depth <= MAX_DEPTH)
         {
             nodes = quiesce_nodes = tt_hits = 0;
@@ -65,7 +64,7 @@ public class MyBot : IChessBot
             Console.WriteLine($"PV {GetOrderedLegalMoves()[0]} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
-            if (timer.MillisecondsElapsedThisTurn > timeAllowed) break; //#DEBUG
+            if (timer.MillisecondsElapsedThisTurn > timeAllowed) break;
         }
 
         //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
@@ -90,21 +89,20 @@ public class MyBot : IChessBot
 
     /* SEARCH ---------------------------------------------------------------------------------- */
     private int NegaMax(int depth, int alpha, int beta)
-    {
-        //if (timer.MillisecondsElapsedThisTurn > timeAllowed) return 11111;
-        
+    {   
         nodes++; //#DEBUG
 
-        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item3 >= search_depth - depth) // Item1 -> score, Item2 -> bouond, Item3 -> depth
+        /* Get Transposition Values */
+        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= search_depth - depth) // Item1 -> score, Item2 -> bouond, Item3 -> depth
         {
             tt_hits++; //#DEBUG
-            if (entry.Item2 == 0) return entry.Item1; // exact score
-            if (entry.Item2 == 1 && entry.Item1 <= alpha) return alpha; // fail low
-            if (entry.Item2 == 2 && entry.Item1 >= beta) return beta; // fail high
+            if (entry.Item3 == 0) return entry.Item2; // exact score
+            if (entry.Item3 == 1 && entry.Item2 <= alpha) return alpha; // fail low
+            if (entry.Item3 == 2 && entry.Item2 >= beta) return beta; // fail high
         }
 
+        /* Quiescence Search (delta pruning) */
         var q_search = depth >= search_depth;
-
         int score;
         if (q_search) {
             score = Eval();
@@ -112,7 +110,8 @@ public class MyBot : IChessBot
             if (score > alpha) alpha = score;
         }
 
-        Move? pv = null;
+        /* Main Search */
+        Move pv = default;
         foreach (var move in q_search ? board.GetLegalMoves(true) : GetOrderedLegalMoves())
         {
             board.MakeMove(move);
@@ -121,27 +120,29 @@ public class MyBot : IChessBot
 
             if (timer.MillisecondsElapsedThisTurn > timeAllowed) return 11111;
 
-            if (score > alpha) { alpha = score; pv = move; }
+            if (score > alpha) { alpha = score; pv = move;  }
             if (score >= beta) break;
         }
 
-        if (pv.HasValue && alpha < beta)
-        {
-            /* Set PV move */
-            var moves = GetOrderedLegalMoves();
-            var pv_idx = 0;
-            while (moves[pv_idx] != pv.Value) pv_idx++;
-            while (pv_idx > 0) moves[pv_idx] = moves[--pv_idx];
-            moves[0] = pv.Value;
-        }
+        // if (pv != default(Move) && alpha < beta)
+        // {
+        //     /* Set PV move */
+        //     var moves = GetOrderedLegalMoves();
+        //     var pv_idx = 0;
+        //     while (moves[pv_idx] != pv) pv_idx++;
+        //     while (pv_idx > 0) moves[pv_idx] = moves[--pv_idx];
+        //     moves[0] = pv;
+        // }
 
+        /* Set Transposition Values */
         var best = Math.Min(alpha, beta);
         if (!q_search)
             tt[board.ZobristKey] = (
+                pv,
                 best,
                 search_depth - depth,
                 alpha >= beta ? 2 /* lower bound */
-                : pv.HasValue ? 0 /* exact bound */
+                : pv != default(Move) ? 0 /* exact bound */
                 : 1 /* upper bound */
             );
         return best;
@@ -151,17 +152,19 @@ public class MyBot : IChessBot
     /* MOVE ORDERING --------------------------------------------------------------------------- */
     private Move[] GetOrderedLegalMoves()
     {
-        if (moves_table.TryGetValue(board.ZobristKey, out var moves)) return moves;
+        //if (moves_table.TryGetValue(board.ZobristKey, out var moves)) return moves;
 
-        moves = board.GetLegalMoves();
+        var moves = board.GetLegalMoves();
         for (var i = 1; i < moves.Length;)
         {
             //store the original element for inserting later
             var move = moves[i];
             int j = i++ - 1;
 
+            Move pv = default;
+            if (tt.TryGetValue(board.ZobristKey, out var entry)) pv = entry.Item1;
             //go down the array, swapping until we reach a spot where we can insert
-            while (j >= 0 && GetPrecedence(moves[j]) > GetPrecedence(move)) moves[j + 1] = moves[j--];
+            while (j >= 0 && GetPrecedence(moves[j], pv) > GetPrecedence(move, pv)) moves[j + 1] = moves[j--];
             moves[j + 1] = move; //insert move
         }
 
@@ -169,25 +172,18 @@ public class MyBot : IChessBot
         return moves;
     }
 
-    private int GetPrecedence(Move move) //gets precedence of a move for move ordering {promotions, castles, captures, everything else}
-        //queen promotions: 0
-        //castles: 1
+    private int GetPrecedence(Move move, Move pv_move) //gets precedence of a move for move ordering {promotions, castles, captures, everything else}
+        //pv move: 0
+        //queen promotions: 1
+        //castles: 2
         //captures: 6-14
         //everything else: 20
         => 
-            (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 0 
+            move == pv_move ? 0
+            : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 1 
             : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType 
-            : move.IsCastles ? 1 
+            : move.IsCastles ? 2
             : 20;
-
-
-    /* TIME MANAGEMENT ------------------------------------------------------------------------- */
-    private int GetTimeAllowance()
-    {
-        var move_count = board.PlyCount / 2; //since we want to input full moves to the function
-        //(based on this curve: https://www.desmos.com/calculator/gee60oepkk)
-        return timer.MillisecondsRemaining / ((60 + 1444 / (move_count + 27)) / 2 /*since this calculation is in # of half moves*/);
-    }
 
 
     /* EVALUATION ------------------------------------------------------------------------------ */
@@ -241,10 +237,10 @@ public class MyBot : IChessBot
         /* Mobility Score */
         //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
         //score += GetOrderedLegalMoves().Length;
-        board.ForceSkipTurn();
+        //board.ForceSkipTurn();
         //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score -= side_multiplier;
         //score -= GetOrderedLegalMoves().Length;
-        board.UndoSkipTurn();
+        //board.UndoSkipTurn();
 
         return score * side_multiplier;
     }
