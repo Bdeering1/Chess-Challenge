@@ -61,7 +61,7 @@ public class MyBot : IChessBot
         {
             nodes = quiesce_nodes = tt_hits = 0;
             int score = NegaMax(0, -99999, 99999);
-            Console.WriteLine($"PV {GetOrderedLegalMoves()[0]} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
+            Console.WriteLine($"PV {GetPV()} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
             if (timer.MillisecondsElapsedThisTurn > timeAllowed) break;
@@ -69,21 +69,23 @@ public class MyBot : IChessBot
 
         //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
 
-        // var move = GetOrderedLegalMoves()[0]; //#DEBUG
-        // Console.WriteLine($"Move: {move} PST Val (Move.To): {GetPstVal(move.TargetSquare.Index, (int)move.MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
+        // Console.WriteLine($"Move: {GetPV()} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)GetPV().MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
 
         Console.WriteLine(); //#DEBUG
         var pv_moves = new Stack<Move>(); //#DEBUG
         for (int i = 0; i < search_depth; i++) { //#DEBUG
-            Console.WriteLine($"PV {GetOrderedLegalMoves()[0]} static score: {Evaluation.Debug(board, packed_psts, piece_val, piece_phase, pawn_modifier), -5} depth: {i}"); //#DEBUG
-            pv_moves.Push(GetOrderedLegalMoves()[0]); //#DEBUG
-            board.MakeMove(GetOrderedLegalMoves()[0]); //#DEBUG
+            Console.WriteLine($"PV {GetPV()} static score: {Evaluation.Debug(board, packed_psts, piece_val, piece_phase, pawn_modifier), -5} depth: {i}"); //#DEBUG
+            pv_moves.Push(GetPV()); //#DEBUG
+            board.MakeMove(GetPV()); //#DEBUG
         }
         for (int i = 0; i < search_depth; i++) { //#DEBUG
             board.UndoMove(pv_moves.Pop()); //#DEBUG
         } //#DEBUG
 
-        return GetOrderedLegalMoves()[0];
+        //Move best_move = default;
+        //if (tt.TryGetValue(board.ZobristKey, out var entry)) best_move = entry.Item1;
+
+        return tt[board.ZobristKey].Item1;
     }
 
 
@@ -110,9 +112,23 @@ public class MyBot : IChessBot
             if (score > alpha) alpha = score;
         }
 
-        /* Main Search */
         Move pv = default;
-        foreach (var move in q_search ? board.GetLegalMoves(true) : GetOrderedLegalMoves())
+
+        var moves = board.GetLegalMoves();
+        for (var i = 1; i < moves.Length;)
+        {
+            //store the original element for inserting later
+            var move = moves[i];
+            int j = i++ - 1;
+            
+            if (tt.TryGetValue(board.ZobristKey, out var tt_entry)) pv = tt_entry.Item1;
+            //go down the array, swapping until we reach a spot where we can insert
+            while (j >= 0 && GetPrecedence(moves[j], pv) > GetPrecedence(move, pv)) moves[j + 1] = moves[j--];
+            moves[j + 1] = move; //insert move
+        }
+
+        /* Main Search */
+        foreach (var move in q_search ? board.GetLegalMoves(true) : moves)
         {
             board.MakeMove(move);
             score = -NegaMax(depth + 1, -beta, -alpha);
@@ -120,19 +136,9 @@ public class MyBot : IChessBot
 
             if (timer.MillisecondsElapsedThisTurn > timeAllowed) return 11111;
 
-            if (score > alpha) { alpha = score; pv = move;  }
+            if (score > alpha) { alpha = score; pv = move; }
             if (score >= beta) break;
         }
-
-        // if (pv != default(Move) && alpha < beta)
-        // {
-        //     /* Set PV move */
-        //     var moves = GetOrderedLegalMoves();
-        //     var pv_idx = 0;
-        //     while (moves[pv_idx] != pv) pv_idx++;
-        //     while (pv_idx > 0) moves[pv_idx] = moves[--pv_idx];
-        //     moves[0] = pv;
-        // }
 
         /* Set Transposition Values */
         var best = Math.Min(alpha, beta);
@@ -150,28 +156,6 @@ public class MyBot : IChessBot
 
 
     /* MOVE ORDERING --------------------------------------------------------------------------- */
-    private Move[] GetOrderedLegalMoves()
-    {
-        //if (moves_table.TryGetValue(board.ZobristKey, out var moves)) return moves;
-
-        var moves = board.GetLegalMoves();
-        for (var i = 1; i < moves.Length;)
-        {
-            //store the original element for inserting later
-            var move = moves[i];
-            int j = i++ - 1;
-
-            Move pv = default;
-            if (tt.TryGetValue(board.ZobristKey, out var entry)) pv = entry.Item1;
-            //go down the array, swapping until we reach a spot where we can insert
-            while (j >= 0 && GetPrecedence(moves[j], pv) > GetPrecedence(move, pv)) moves[j + 1] = moves[j--];
-            moves[j + 1] = move; //insert move
-        }
-
-        moves_table[board.ZobristKey] = moves;
-        return moves;
-    }
-
     private int GetPrecedence(Move move, Move pv_move) //gets precedence of a move for move ordering {promotions, castles, captures, everything else}
         //pv move: 0
         //queen promotions: 1
@@ -236,10 +220,10 @@ public class MyBot : IChessBot
 
         /* Mobility Score */
         //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
-        //score += GetOrderedLegalMoves().Length;
+        //score += board.GetLegalMoves().Length;
         //board.ForceSkipTurn();
         //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score -= side_multiplier;
-        //score -= GetOrderedLegalMoves().Length;
+        //score -= board.GetLegalMoves().Length;
         //board.UndoSkipTurn();
 
         return score * side_multiplier;
@@ -251,5 +235,11 @@ public class MyBot : IChessBot
         var rank = lsb / 8;
         if (debug) Console.WriteLine($"type: {type + 1} lsb: {lsb}, rank: {rank + 1}, file: {file + 1}, pst: {type * 4 + (file)}, pst_val: {(sbyte)((packed_psts[type * 4 + (file > 3 ? 7 - file : file)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF)}"); //#DEBUG
         return (sbyte)((packed_psts[type * 4 + (file > 3 ? 7 - file : file) + table_shift] >> (is_white ? 7 - rank : rank) * 8) & 0xFF);
+    }
+
+    private Move GetPV() { //#DEBUG
+        Move pv = default; //#DEBUG
+        if (tt.TryGetValue(board.ZobristKey, out var entry)) pv = entry.Item1; //#DEBUG
+        return pv; //#DEBUG
     }
 }
