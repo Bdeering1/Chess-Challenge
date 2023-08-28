@@ -24,11 +24,12 @@ using System.Linq;
  * 
  * Notes
  * -------------------------------------------------------------------------------------------------
- * - look into issue with making illegal moves
+ * - look into issue with making illegal moves ** this should be fixed
  * - look into issue with drawing in winning positions
  * - refactor transposition pruning code
  * - add history heuristic
  * - possibly refactor packed PSTs to use decimals
+ * - add non-stalemate draw detection in NegaMax
  */
 public class MyBot : IChessBot
 {
@@ -54,7 +55,7 @@ public class MyBot : IChessBot
     private readonly int[] pawn_modifier = { 0, 0, 1, -1, -1, 0, 0 };
 
     private Dictionary<ulong, Move[]> moves_table = new();
-    private Dictionary<ulong, (Move, int, int, int)> tt = new(); // (move, score, bound, depth), bound -> 0 = exact, 1 = upper, 2 = lower
+    private Dictionary<ulong, (Move, int, int, int)> tt = new(); // (move, score, bound, depth_left), bound -> 0 = exact, 1 = upper, 2 = lower
 
     private ulong[] packed_psts = PstPacker.Generate();
 
@@ -99,7 +100,8 @@ public class MyBot : IChessBot
         //     board.UndoMove(pv_moves.Pop()); //#DEBUG
         // } //#DEBUG
 
-        Console.WriteLine($"PV {root_pv} TT {tt[board.ZobristKey].Item1} (bound: {tt[board.ZobristKey].Item3}, depth left: {tt[board.ZobristKey].Item4}) depth: {search_depth - 1, -2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+        Console.WriteLine($"PV {root_pv} TT {tt[board.ZobristKey].Item1} (bound: {tt[board.ZobristKey].Item3}) depth: {search_depth - 1, -2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+        if (tt[board.ZobristKey].Item3 == 2) throw new Exception("ERROR: Root TT entry lower bound"); //#DEBUG
 
         if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
             Console.WriteLine(board.CreateDiagram()); //#DEBUG
@@ -116,18 +118,18 @@ public class MyBot : IChessBot
     private int NegaMax(int depth, int alpha, int beta)
     {   
         /* Get Transposition Values */
-        // if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= search_depth - depth && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
-        // {
-        //     tt_hits++; //#DEBUG
-        //     if (entry.Item3 == 0) return entry.Item2; // exact score
-        //     if (entry.Item3 == 1 && entry.Item2 <= alpha) return alpha; // fail low
-        //     if (entry.Item3 == 2 && entry.Item2 >= beta) return beta; // fail high
-        // }
-        tt.TryGetValue(board.ZobristKey, out var entry);
+        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= search_depth - depth && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
+        {
+            tt_hits++; //#DEBUG
+            if (entry.Item3 == 0) return entry.Item2; // exact score
+            if (entry.Item3 == 1 && entry.Item2 <= alpha) return alpha; // fail low
+            if (entry.Item3 == 2 && entry.Item2 >= beta) return beta; // fail high
+        }
+        //tt.TryGetValue(board.ZobristKey, out var entry);
 
         /* Quiescence Search (delta pruning) */
         var q_search = depth >= search_depth;
-        int score, move_idx = 0;
+        int score = -999999, move_idx = 0;
         if (q_search) {
             score = Eval();
             if (score >= beta) return beta;
@@ -144,13 +146,16 @@ public class MyBot : IChessBot
         var move_scores = new int[128];
         foreach (Move move in moves)
             move_scores[move_idx++] = (
-                move == entry.Item1 ? 0
-                : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 1 
-                : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType 
-                : move.IsCastles ? 2
-                : 20
+                move == entry.Item1 && entry.Item3 == 0 ? 0 // PV move
+                : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 1 // queen promotion
+                : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType // captures
+                : move.IsCastles ? 2 //castles
+                : 20 // other moves
             );
         move_scores.AsSpan(0, moves.Length).Sort(moves);
+
+        // this avoids issues with with checkmate or stalemate only being seen in quiescence search
+        if (moves.Length == 0) return board.IsInCheck() ? depth - 50000 : 0;
 
         /* Main Search */
         foreach (var move in moves)
@@ -171,7 +176,7 @@ public class MyBot : IChessBot
 
         /* Set Transposition Values */
         var best = Math.Min(alpha, beta);
-        if (!q_search && !(depth != 0 && board.ZobristKey == root_key))
+        if (!q_search && entry.Item4 <= search_depth - depth) // only update TT if entry is shallower than current search depth
             tt[board.ZobristKey] = (
                 pv,
                 best,
@@ -180,6 +185,7 @@ public class MyBot : IChessBot
                 : 1, /* upper bound */
                 search_depth - depth
             );
+
         return best;
     }
 
@@ -201,8 +207,8 @@ public class MyBot : IChessBot
      */
     private int Eval()
     {
-        if (board.IsDraw()) return 0;
-        if (board.IsInCheckmate()) return -50000;
+        // if (board.IsDraw()) return 0;
+        // if (board.IsInCheckmate()) return -50000;
 
         int score = 0,
             side_multiplier = board.IsWhiteToMove ? 1 : -1,
