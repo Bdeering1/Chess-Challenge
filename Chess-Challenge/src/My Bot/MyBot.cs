@@ -1,6 +1,7 @@
 ﻿using ChessChallenge.API;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 /*
  * Development Resources
@@ -20,6 +21,14 @@ using System.Collections.Generic;
  *  - https://github.com/nathanWolo/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
  *  - https://github.com/Tjalle-S/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs 
  *  - https://github.com/Sidhant-Roymoulik/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
+ * 
+ * Notes
+ * -------------------------------------------------------------------------------------------------
+ * - look into issue with making illegal moves
+ * - look into issue with drawing in winning positions
+ * - refactor transposition pruning code
+ * - add history heuristic
+ * - possibly refactor packed PSTs to use decimals
  */
 public class MyBot : IChessBot
 {
@@ -37,7 +46,7 @@ public class MyBot : IChessBot
     
     private bool logged_side = false; //#DEBUG
 
-    private ulong root_key;
+    private ulong root_key; //#DEBUG
 
 
     private readonly int[] piece_val = { 0, 100, 317 /* 325 - 8 */, 333 /* 325 + 8 */, 558 /* 550 + 8 */, 1000, 0 };
@@ -58,13 +67,13 @@ public class MyBot : IChessBot
         nodes = quiesce_nodes = tt_hits = 0; //#DEBUG
         timeAllowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
 
-        root_key = board.ZobristKey;
+        root_key = board.ZobristKey; //#DEBUG
 
         //Console.WriteLine(); //#DEBUG
         search_depth = 1;
         while (search_depth <= MAX_DEPTH)
         {
-            nodes = tt_hits = 0;
+            nodes = tt_hits = 0; //#DEBUG
             int score = NegaMax(0, -99999, 99999);
             //Console.WriteLine($"PV {GetPV()} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
@@ -89,8 +98,15 @@ public class MyBot : IChessBot
         // for (int i = 0; i < search_depth; i++) { //#DEBUG
         //     board.UndoMove(pv_moves.Pop()); //#DEBUG
         // } //#DEBUG
-        
-        Console.WriteLine($"PV: {tt[board.ZobristKey].Item1} depth: {search_depth - 1, -2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn}ms");
+
+        Console.WriteLine($"PV {root_pv} TT {tt[board.ZobristKey].Item1} (bound: {tt[board.ZobristKey].Item3}, depth left: {tt[board.ZobristKey].Item4}) depth: {search_depth - 1, -2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+
+        if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
+            Console.WriteLine(board.CreateDiagram()); //#DEBUG
+            Console.WriteLine($"{root_pv}"); //#DEBUG
+            Console.WriteLine($"is original position: {(root_key == board.ZobristKey)}"); //#DEBUG
+            throw new Exception("ERROR: Trying to make move that doesn't exist"); //#DEBUG
+        } //#DEBUG
 
         return root_pv;
     }
@@ -100,7 +116,7 @@ public class MyBot : IChessBot
     private int NegaMax(int depth, int alpha, int beta)
     {   
         /* Get Transposition Values */
-        // if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= search_depth - depth) // Item1 -> score, Item2 -> bouond, Item3 -> depth
+        // if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= search_depth - depth && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
         // {
         //     tt_hits++; //#DEBUG
         //     if (entry.Item3 == 0) return entry.Item2; // exact score
@@ -111,7 +127,7 @@ public class MyBot : IChessBot
 
         /* Quiescence Search (delta pruning) */
         var q_search = depth >= search_depth;
-        int score, moves_scored = 0;
+        int score, move_idx = 0;
         if (q_search) {
             score = Eval();
             if (score >= beta) return beta;
@@ -123,11 +139,11 @@ public class MyBot : IChessBot
         /* Move Ordering */
         Move pv = default;
         Span<Move> moves = stackalloc Move[128];
-        board.GetLegalMovesNonAlloc(ref moves, q_search);
+        board.GetLegalMovesNonAlloc(ref moves, q_search && !board.IsInCheck());
 
         var move_scores = new int[128];
         foreach (Move move in moves)
-            move_scores[moves_scored++] = (
+            move_scores[move_idx++] = (
                 move == entry.Item1 ? 0
                 : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 1 
                 : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType 
@@ -159,10 +175,10 @@ public class MyBot : IChessBot
             tt[board.ZobristKey] = (
                 pv,
                 best,
-                search_depth - depth,
                 alpha >= beta ? 2 /* lower bound */
                 : pv != default(Move) ? 0 /* exact bound */
-                : 1 /* upper bound */
+                : 1, /* upper bound */
+                search_depth - depth
             );
         return best;
     }
@@ -218,10 +234,10 @@ public class MyBot : IChessBot
 
         /* Mobility Score */
         //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
-        //score += board.GetLegalMoves().Length;
+        score += board.GetLegalMoves().Length;
         //board.ForceSkipTurn();
         //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score -= side_multiplier;
-        //score -= board.GetLegalMoves().Length;
+        score -= board.GetLegalMoves().Length;
         //board.UndoSkipTurn();
 
         return score * side_multiplier;

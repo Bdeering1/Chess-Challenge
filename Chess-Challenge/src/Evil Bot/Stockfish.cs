@@ -2,10 +2,11 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 public class Stockfish : IChessBot
 {
-    const int MS_PER_MOVE = 500;
+    const int MS_PER_MOVE = 100;
 
     const string STOCKFISH_BINARY = "stockfish";
     const string MAX_DEPTH = "10";
