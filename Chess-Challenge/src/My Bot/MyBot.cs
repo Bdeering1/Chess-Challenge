@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+using static ChessChallenge.API.BitboardHelper;
+
 /*
  * Development Resources
  * -------------------------------------------------------------------------------------------------
@@ -38,14 +40,15 @@ public class MyBot : IChessBot
     private int timeAllowed;
     private int nodes; //#DEBUG
     private int quiesce_nodes; //#DEBUG
+    private int null_pruned; //#DEBUG
     private double total_nqn_ratio = 0; //#DEBUG
     private int total_moves = 0; //#DEBUG
     private int tt_hits; //#DEBUG
 
-    private int search_depth = 1;
+    private int search_depth;
+    private int gamephase;
 
     private Move root_pv;
-    private int root_score;
     private ulong root_key; //#DEBUG
     
     private bool logged_side = false; //#DEBUG
@@ -65,49 +68,48 @@ public class MyBot : IChessBot
 
         board = _board;
         timer = _timer;
-        nodes = quiesce_nodes = tt_hits = 0; //#DEBUG
+        nodes = quiesce_nodes = null_pruned = tt_hits = 0; //#DEBUG
         timeAllowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
 
-        root_score = Eval();
         var final_score = 0; //#DEBUG
         root_key = board.ZobristKey; //#DEBUG
 
         //Console.WriteLine(); //#DEBUG
-        search_depth = 1;
-        while (search_depth <= 15) // maximum search depth of 15
+        search_depth = 2;
+        while (true) // maximum search depth of 15
         {
             nodes = tt_hits = 0; //#DEBUG
-            int score = NegaMax(0, -99999, 99999);
+            int score = NegaMax(0, -99999, 99999, true);
             if (score != 11111) final_score = score; //#DEBUG
             //Console.WriteLine($"PV {GetPV()} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
-            if (timer.MillisecondsElapsedThisTurn > timeAllowed) break;
+            if (timer.MillisecondsElapsedThisTurn > timeAllowed) {
+                /* Timing Debug */
+                //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
+
+                /* PST Debug */
+                // Console.WriteLine($"Move: {GetPV()} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)GetPV().MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
+
+                total_moves++; //#DEBUG
+                total_nqn_ratio += (double) nodes / quiesce_nodes; //#DEBUG
+                Console.WriteLine($"Eval: {final_score,-5} PV {root_pv} TT {tt[board.ZobristKey].Item1} depth: {search_depth - 1, -2} nodes: {nodes, -6} quiesce nodes: {quiesce_nodes,-6} N/QN Ratio: {(total_nqn_ratio / total_moves),-6:0.###} n pruned: {null_pruned, -5} tt hits: {tt_hits, -5} tt_size: {tt.Count} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+
+                if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
+                    Console.WriteLine(board.CreateDiagram()); //#DEBUG
+                    Console.WriteLine($"{root_pv}"); //#DEBUG
+                    Console.WriteLine($"is original position: {(root_key == board.ZobristKey)}"); //#DEBUG
+                    throw new Exception("ERROR: Trying to make move that doesn't exist"); //#DEBUG
+                } //#DEBUG
+
+                return root_pv;
+            } //#DEBUG
         }
-
-        /* Timing Debug */
-        //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
-
-        /* PST Debug */
-        // Console.WriteLine($"Move: {GetPV()} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)GetPV().MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
-
-        total_moves++; //#DEBUG
-        total_nqn_ratio += (double) nodes / quiesce_nodes; //#DEBUG
-        Console.WriteLine($"Eval: {final_score,-5} PV {root_pv} TT {tt[board.ZobristKey].Item1} depth: {search_depth - 1, -2} nodes: {nodes, -6} quiesce nodes: {quiesce_nodes,-6} N/QN Ratio: {(total_nqn_ratio / total_moves),-6:0.###}  tt hits: {tt_hits,-5} tt_size: {tt.Count} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
-
-        if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
-            Console.WriteLine(board.CreateDiagram()); //#DEBUG
-            Console.WriteLine($"{root_pv}"); //#DEBUG
-            Console.WriteLine($"is original position: {(root_key == board.ZobristKey)}"); //#DEBUG
-            throw new Exception("ERROR: Trying to make move that doesn't exist"); //#DEBUG
-        } //#DEBUG
-
-        return root_pv;
     }
 
 
     /* SEARCH ---------------------------------------------------------------------------------- */
-    private int NegaMax(int depth, int alpha, int beta)
+    private int NegaMax(int depth, int alpha, int beta, bool allow_null)
     {   
         if (depth > 0 && board.IsRepeatedPosition()) return 0;
 
@@ -128,6 +130,16 @@ public class MyBot : IChessBot
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
         }
+        else if (/*beta - alpha == 1 && */!board.IsInCheck() && gamephase > 0) {
+            Eval();
+            /* Null move pruning */
+            if (search_depth - depth >= 2 && allow_null) {
+                board.ForceSkipTurn();
+                score = -NegaMax(depth + 3 + depth / 4, -beta, -alpha, false); // why is the new depth calculated this way?
+                board.UndoSkipTurn();
+                if (score >= beta) { null_pruned++; return beta; }
+            }
+        }
         if (!q_search) nodes++; //#DEBUG
         else quiesce_nodes++; //#DEBUG
 
@@ -141,7 +153,7 @@ public class MyBot : IChessBot
             move_scores[move_idx++] = (
                 move == entry.Item1 && entry.Item3 == 0 ? 0 // PV move
                 : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 1 // queen promotion
-                : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType // captures
+                : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType // MVV-LVA
                 : move.IsCastles ? 2 //castles
                 : 20 // other moves
             );
@@ -155,7 +167,7 @@ public class MyBot : IChessBot
         foreach (var move in moves)
         {
             board.MakeMove(move);
-            score = -NegaMax(depth + 1, -beta, -alpha);
+            score = -NegaMax(depth + 1, -beta, -alpha, true);
             board.UndoMove(move);
 
             if (score > alpha) {
@@ -213,7 +225,8 @@ public class MyBot : IChessBot
             side_multiplier = board.IsWhiteToMove ? 1 : -1,
             pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
 
-        int mg = 0, eg = 0, phase = 0;
+        int mg = 0, eg = 0;
+        gamephase = 0;
         foreach (bool is_white in new[] { true, false }) //true = white, false = black (can likely be optimized for tokens if PSTs are changed)
         {
             for (var piece_type = PieceType.None; piece_type++ < PieceType.King;)
@@ -222,11 +235,11 @@ public class MyBot : IChessBot
                 ulong mask = board.GetPieceBitboard(piece_type, is_white);
                 while (mask != 0)
                 {
-                    int lsb = BitboardHelper.ClearAndGetIndexOfLSB(ref mask);
-                    phase += piece_phase[piece];
+                    int lsb = ClearAndGetIndexOfLSB(ref mask);
+                    gamephase += piece_phase[piece];
 
                     mg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 0);
-                    eg += piece_val[piece]/* * 2 */ + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 6);
+                    eg += piece_val[piece] * 2 + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 6);
                 }
             }
 
@@ -235,7 +248,7 @@ public class MyBot : IChessBot
         }
 
         mg += 10 * side_multiplier; // tempo bonus
-        score = (mg * phase + eg * (24 - phase)) / 24; // max phase = 24
+        score = (mg * gamephase + eg * (24 - gamephase)) / 24; // max gamephase = 24
 
         /* Mobility Score */
         //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
