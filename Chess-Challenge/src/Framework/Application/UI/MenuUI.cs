@@ -54,6 +54,10 @@ namespace ChessChallenge.Application
             {
                 controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.Stockfish12);
             }
+            if (NextButtonInRow("Test Positions", ref buttonPos2, spacing, buttonSize))
+            {
+                controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.Stockfish20, true);
+            }
 
             // Page buttons
             buttonPos.Y += breakSpacing;

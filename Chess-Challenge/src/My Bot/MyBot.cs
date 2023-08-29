@@ -101,7 +101,6 @@ public class MyBot : IChessBot
         // } //#DEBUG
 
         Console.WriteLine($"PV {root_pv} TT {tt[board.ZobristKey].Item1} (bound: {tt[board.ZobristKey].Item3}) depth: {search_depth - 1, -2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
-        if (tt[board.ZobristKey].Item3 == 2) throw new Exception("ERROR: Root TT entry lower bound"); //#DEBUG
 
         if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
             Console.WriteLine(board.CreateDiagram()); //#DEBUG
@@ -117,6 +116,8 @@ public class MyBot : IChessBot
     /* SEARCH ---------------------------------------------------------------------------------- */
     private int NegaMax(int depth, int alpha, int beta)
     {   
+        //if (depth > 0 && board.IsRepeatedPosition()) return 0;
+
         /* Get Transposition Values */
         if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= search_depth - depth && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
         {
@@ -129,7 +130,7 @@ public class MyBot : IChessBot
 
         /* Quiescence Search (delta pruning) */
         var q_search = depth >= search_depth;
-        int score = -999999, move_idx = 0;
+        int score, move_idx = 0;
         if (q_search) {
             score = Eval();
             if (score >= beta) return beta;
@@ -208,7 +209,6 @@ public class MyBot : IChessBot
     private int Eval()
     {
         // if (board.IsDraw()) return 0;
-        // if (board.IsInCheckmate()) return -50000;
 
         int score = 0,
             side_multiplier = board.IsWhiteToMove ? 1 : -1,

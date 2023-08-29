@@ -24,6 +24,7 @@ namespace ChessChallenge.Application
             Stockfish4,
             Stockfish8,
             Stockfish12,
+            Stockfish20,
             August23,
             Sidhant,
             Tjalle,
@@ -45,11 +46,12 @@ namespace ChessChallenge.Application
         public bool HumanWasWhiteLastGame { get; private set; }
 
         // Bot match state
-        readonly string[] botMatchStartFens;
+        string[] botMatchStartFens;
         int botMatchGameIndex;
         public BotMatchStats BotStatsA { get; private set; }
         public BotMatchStats BotStatsB {get;private set;}
         bool botAPlaysWhite;
+        bool useTestPositions = false;
 
 
         // Bot task
@@ -78,14 +80,18 @@ namespace ChessChallenge.Application
 
             BotStatsA = new BotMatchStats("IBot");
             BotStatsB = new BotMatchStats("IBot");
-            botMatchStartFens = FileHelper.ReadResourceFile("Fens.txt").Split('\n').Where(fen => fen.Length > 0).ToArray();
             botTaskWaitHandle = new AutoResetEvent(false);
 
             StartNewGame(PlayerType.Human, PlayerType.MyBot);
         }
 
-        public void StartNewGame(PlayerType whiteType, PlayerType blackType)
+        public void StartNewGame(PlayerType whiteType, PlayerType blackType, bool _useTestPositions = false)
         {
+            useTestPositions = _useTestPositions;
+            botMatchStartFens = useTestPositions
+                ? FileHelper.ReadResourceFile("TestFens.txt").Split('\n').Where(fen => fen.Length > 0).ToArray()
+                : FileHelper.ReadResourceFile("Fens.txt").Split('\n').Where(fen => fen.Length > 0).ToArray();
+
             // End any ongoing game
             EndGame(GameResult.DrawByArbiter, log: false, autoStartNextBotMatch: false);
             gameID = rng.Next();
@@ -222,6 +228,7 @@ namespace ChessChallenge.Application
                 PlayerType.Stockfish4 => new ChessPlayer(new Stockfish(4), type, GameDurationMilliseconds),
                 PlayerType.Stockfish8 => new ChessPlayer(new Stockfish(8), type, GameDurationMilliseconds),
                 PlayerType.Stockfish12 => new ChessPlayer(new Stockfish(12), type, GameDurationMilliseconds),
+                PlayerType.Stockfish20 => new ChessPlayer(new Stockfish(20), type, GameDurationMilliseconds),
                 PlayerType.August23 => new ChessPlayer(new August23(), type, GameDurationMilliseconds),
                 PlayerType.Sidhant => new ChessPlayer(new Sidhant(), type, GameDurationMilliseconds),
                 PlayerType.Tjalle => new ChessPlayer(new Tjalle(), type, GameDurationMilliseconds),
@@ -313,7 +320,7 @@ namespace ChessChallenge.Application
                     if (botMatchGameIndex < numGamesToPlay && autoStartNextBotMatch)
                     {
                         botAPlaysWhite = !botAPlaysWhite;
-                        const int startNextGameDelayMs = 200;
+                        int startNextGameDelayMs = useTestPositions ? 1500 : 100;
                         System.Timers.Timer autoNextTimer = new(startNextGameDelayMs);
                         int originalGameID = gameID;
                         autoNextTimer.Elapsed += (s, e) => AutoStartNextBotMatchGame(originalGameID, autoNextTimer);
@@ -333,7 +340,7 @@ namespace ChessChallenge.Application
         {
             if (originalGameID == gameID)
             {
-                StartNewGame(PlayerBlack.PlayerType, PlayerWhite.PlayerType);
+                StartNewGame(PlayerBlack.PlayerType, PlayerWhite.PlayerType, useTestPositions);
             }
             timer.Close();
         }
@@ -413,7 +420,7 @@ namespace ChessChallenge.Application
         static string GetPlayerName(ChessPlayer player) => GetPlayerName(player.PlayerType);
         static string GetPlayerName(PlayerType type) => type.ToString();
 
-        public void StartNewBotMatch(PlayerType botTypeA, PlayerType botTypeB)
+        public void StartNewBotMatch(PlayerType botTypeA, PlayerType botTypeB, bool useTestPositions = false)
         {
             EndGame(GameResult.DrawByArbiter, log: false, autoStartNextBotMatch: false);
             botMatchGameIndex = 0;
@@ -428,7 +435,7 @@ namespace ChessChallenge.Application
             BotStatsB = new BotMatchStats(nameB);
             botAPlaysWhite = true;
             Log($"Starting new match: {nameA} vs {nameB}", false, ConsoleColor.Blue);
-            StartNewGame(botTypeA, botTypeB);
+            StartNewGame(botTypeA, botTypeB, useTestPositions);
         }
 
 
