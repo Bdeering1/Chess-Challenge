@@ -24,31 +24,31 @@ using System.Linq;
  * 
  * Notes
  * -------------------------------------------------------------------------------------------------
- * - look into issue with making illegal moves ** this should be fixed
- * - look into issue with drawing in winning positions
  * - refactor transposition pruning code
- * - add history heuristic
  * - possibly refactor packed PSTs to use decimals
- * - add non-stalemate draw detection in NegaMax
+ * - add history heuristic
+ * - add null move pruning
+ * - add futility pruning
+ * - add aspiration windows
  */
 public class MyBot : IChessBot
 {
     private Board board;
     private Timer timer;
+    private int timeAllowed;
     private int nodes; //#DEBUG
     private int quiesce_nodes; //#DEBUG
+    private double total_nqn_ratio = 0; //#DEBUG
+    private int total_moves = 0; //#DEBUG
     private int tt_hits; //#DEBUG
-    private int timeAllowed;
 
     private int search_depth = 1;
-    private readonly int MAX_DEPTH = 15;
 
     private Move root_pv;
+    private int root_score;
+    private ulong root_key; //#DEBUG
     
     private bool logged_side = false; //#DEBUG
-
-    private ulong root_key; //#DEBUG
-
 
     private readonly int[] piece_val = { 0, 100, 317 /* 325 - 8 */, 333 /* 325 + 8 */, 558 /* 550 + 8 */, 1000, 0 };
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
@@ -68,14 +68,17 @@ public class MyBot : IChessBot
         nodes = quiesce_nodes = tt_hits = 0; //#DEBUG
         timeAllowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
 
+        root_score = Eval();
+        var final_score = 0; //#DEBUG
         root_key = board.ZobristKey; //#DEBUG
 
         //Console.WriteLine(); //#DEBUG
         search_depth = 1;
-        while (search_depth <= MAX_DEPTH)
+        while (search_depth <= 15) // maximum search depth of 15
         {
             nodes = tt_hits = 0; //#DEBUG
             int score = NegaMax(0, -99999, 99999);
+            if (score != 11111) final_score = score; //#DEBUG
             //Console.WriteLine($"PV {GetPV()} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
 
@@ -88,19 +91,9 @@ public class MyBot : IChessBot
         /* PST Debug */
         // Console.WriteLine($"Move: {GetPV()} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)GetPV().MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
 
-        /* Search Debug */
-        // Console.WriteLine(); //#DEBUG
-        // var pv_moves = new Stack<Move>(); //#DEBUG
-        // for (int i = 0; i < search_depth; i++) { //#DEBUG
-        //     Console.WriteLine($"PV {GetPV()} static score: {Evaluation.Debug(board, packed_psts, piece_val, piece_phase, pawn_modifier), -5} depth: {i}"); //#DEBUG
-        //     pv_moves.Push(GetPV()); //#DEBUG
-        //     board.MakeMove(GetPV()); //#DEBUG
-        // }
-        // for (int i = 0; i < search_depth; i++) { //#DEBUG
-        //     board.UndoMove(pv_moves.Pop()); //#DEBUG
-        // } //#DEBUG
-
-        Console.WriteLine($"PV {root_pv} TT {tt[board.ZobristKey].Item1} (bound: {tt[board.ZobristKey].Item3}) depth: {search_depth - 1, -2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+        total_moves++; //#DEBUG
+        total_nqn_ratio += (double) nodes / quiesce_nodes; //#DEBUG
+        Console.WriteLine($"Eval: {final_score,-5} PV {root_pv} TT {tt[board.ZobristKey].Item1} depth: {search_depth - 1, -2} nodes: {nodes, -6} quiesce nodes: {quiesce_nodes,-6} N/QN Ratio: {(total_nqn_ratio / total_moves),-6:0.###}  tt hits: {tt_hits,-5} tt_size: {tt.Count} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
 
         if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
             Console.WriteLine(board.CreateDiagram()); //#DEBUG
@@ -116,7 +109,7 @@ public class MyBot : IChessBot
     /* SEARCH ---------------------------------------------------------------------------------- */
     private int NegaMax(int depth, int alpha, int beta)
     {   
-        //if (depth > 0 && board.IsRepeatedPosition()) return 0;
+        if (depth > 0 && board.IsRepeatedPosition()) return 0;
 
         /* Get Transposition Values */
         if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= search_depth - depth && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
@@ -126,7 +119,6 @@ public class MyBot : IChessBot
             if (entry.Item3 == 1 && entry.Item2 <= alpha) return alpha; // fail low
             if (entry.Item3 == 2 && entry.Item2 >= beta) return beta; // fail high
         }
-        //tt.TryGetValue(board.ZobristKey, out var entry);
 
         /* Quiescence Search (delta pruning) */
         var q_search = depth >= search_depth;
@@ -142,9 +134,9 @@ public class MyBot : IChessBot
         /* Move Ordering */
         Move pv = default;
         Span<Move> moves = stackalloc Move[128];
-        board.GetLegalMovesNonAlloc(ref moves, q_search && !board.IsInCheck());
+        board.GetLegalMovesNonAlloc(ref moves, q_search/* && !board.IsInCheck()*/);
 
-        var move_scores = new int[128];
+        Span<int> move_scores = stackalloc int[moves.Length];
         foreach (Move move in moves)
             move_scores[move_idx++] = (
                 move == entry.Item1 && entry.Item3 == 0 ? 0 // PV move
@@ -153,10 +145,11 @@ public class MyBot : IChessBot
                 : move.IsCastles ? 2 //castles
                 : 20 // other moves
             );
-        move_scores.AsSpan(0, moves.Length).Sort(moves);
+        //move_scores.AsSpan(0, moves.Length).Sort(moves);
+        MemoryExtensions.Sort(move_scores, moves);
 
         // this avoids issues with with checkmate or stalemate only being seen in quiescence search
-        if (moves.Length == 0) return board.IsInCheck() ? depth - 50000 : 0;
+        if (!q_search && moves.Length == 0) return board.IsInCheck() ? depth - 50000 : 0;
 
         /* Main Search */
         foreach (var move in moves)
@@ -205,10 +198,16 @@ public class MyBot : IChessBot
      * King Safety                                  https://www.chessprogramming.org/King_Safety
      * Space                                        https://www.chessprogramming.org/Space
      * Tempo                                        https://www.chessprogramming.org/Tempo
+     * 
+     * Todo
+     * --------------------------------------------------------------------------------------------------
+     * - add king safety
+     * - incremental eval?
+     * - provision for timing out opponent?
      */
     private int Eval()
     {
-        // if (board.IsDraw()) return 0;
+        if (board.IsDraw()) return 0;
 
         int score = 0,
             side_multiplier = board.IsWhiteToMove ? 1 : -1,
@@ -227,7 +226,7 @@ public class MyBot : IChessBot
                     phase += piece_phase[piece];
 
                     mg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 0);
-                    eg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 6);
+                    eg += piece_val[piece]/* * 2 */ + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 6);
                 }
             }
 
@@ -235,7 +234,7 @@ public class MyBot : IChessBot
             eg = -eg;
         }
 
-        mg += 10 * side_multiplier;
+        mg += 10 * side_multiplier; // tempo bonus
         score = (mg * phase + eg * (24 - phase)) / 24; // max phase = 24
 
         /* Mobility Score */

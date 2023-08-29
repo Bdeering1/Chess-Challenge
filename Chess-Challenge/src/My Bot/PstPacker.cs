@@ -16,8 +16,8 @@ public class PstPacker
       0,  10,  12,  17,
      -5,   5,   7,  12,
     -10,   0,   5,   5,
-    -10,   3,   2,   0,
-    -15,  -5, -14, -15,
+    -10,   3,   2,   2,
+    -15,  -5,  -5, -15,
       0,   0,   0,   0,
     };
 
@@ -29,7 +29,7 @@ public class PstPacker
      0,   0,   0,   0,   0,
      0,   0,   0,   0,   0,
      2,   2,   2,   2,   2,
-     0,   0,   0,   0,
+     0,   0,   0,   0,   0,
     };
 
     private static int[] mg_knight_table = {
@@ -162,7 +162,8 @@ public class PstPacker
             eg_king_table
         };
 
-        // Console.WriteLine("Packed table:\n");
+        //ApplyNoise(table);
+
         ulong[] packedData = PackData(table);
 
         // Console.WriteLine("Unpacked table:\n");
@@ -173,6 +174,19 @@ public class PstPacker
 
     private const int tableWidth = 4;
     private const int tableHeight = 8;
+
+    private static void ApplyNoise(List<int[]> tables) {
+        var rand = new Random();
+        foreach (var table in tables) {
+            for (int file = 0; file < tableWidth; file++)
+            {
+                for (int rank = 0; rank < tableHeight; rank++)
+                {
+                    table[(rank * tableWidth) + file] = table[(rank * tableWidth) + file] + rand.Next(-1, 2);
+                }
+            }
+        }
+    }
 
     // Packs data in the following form
     // ulong[(set * tableWidth) + file] = rank
@@ -196,17 +210,6 @@ public class PstPacker
             }
         }
 
-        // Console.WriteLine("{ ");
-        // for (int set = 0; set < tablesToPack.Count; set++)
-        // {
-        //     for (int file = 0; file < tableWidth; file++)
-        //     {
-        //         Console.Write($"0x{packedData[(set * tableWidth) + file]:X}, ");
-        //     }
-        //     Console.WriteLine();
-        // }
-        // Console.WriteLine("};");
-
         return packedData;
     }
 
@@ -220,9 +223,9 @@ public class PstPacker
             Console.WriteLine("\n\nTable for type: " + (ScoreType)type);
             for (int rank = 0; rank < tableHeight; rank++)
             {
-                for (int file = 0; file < tableWidth*2; file++)
+                for (int file = 0; file < tableWidth /* * 2 */; file++)
                 {
-                    Console.Write($"{GetSquareBonus(tablesToUnpack, type, true, rank, file > 3 ? 7 - file : file), 4}" + ", ");
+                    Console.Write($"{GetSquareBonus(tablesToUnpack, type, true, rank, file > 3 ? 7 - file : file), 3}, ");
                 }
                 Console.WriteLine();
             }

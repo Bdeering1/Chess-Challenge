@@ -217,7 +217,7 @@ public class Tjalle : IChessBot
         Move bestMove = legalMoves.Length > 0 ? legalMoves[0] : new();
 
         // Higher value is better, sorted ascending, so reverse.
-        while (numMoves --> 0)
+        while (numMoves-- > 0)
         {
             Move move = legalMoves[numMoves];
 
