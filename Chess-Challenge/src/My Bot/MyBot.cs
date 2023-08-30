@@ -44,6 +44,7 @@ public class MyBot : IChessBot
     private int tt_hits; //#DEBUG
     private int nmp_count; //#DEBUG
     private int rfp_count; //#DEBUG
+    private int efp_count; //#DEBUG
 
     private int search_depth;
     private int gamephase;
@@ -91,7 +92,7 @@ public class MyBot : IChessBot
                 /* PST Debug */
                 // Console.WriteLine($"Move: {GetPV()} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)GetPV().MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
 
-                Console.WriteLine($"Eval: {final_score,-5} PV {root_pv} depth: {search_depth - 1, -2} nodes: {nodes, -6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count, -6} RFP: {rfp_count, -5} tt hits: {tt_hits, -5} tt size: {tt.Count} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+                Console.WriteLine($"Eval: {final_score,-5} PV {root_pv} depth: {search_depth - 1,-2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} tt hits: {tt_hits, -5} tt size: {tt.Count} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
 
                 if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
                     Console.WriteLine(board.CreateDiagram()); //#DEBUG
@@ -111,7 +112,9 @@ public class MyBot : IChessBot
     {   
         if (depth > 0 && board.IsRepeatedPosition()) return 0;
 
-        int depth_left = search_depth - depth, score, move_idx = 0;
+        int score,
+            depth_left = search_depth - depth,
+            move_idx = 0;
 
         /* Get Transposition Values */
         if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= depth_left && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
@@ -123,7 +126,7 @@ public class MyBot : IChessBot
         }
 
         /* Quiescence Search (delta pruning) */
-        var q_search = depth >= search_depth;
+        bool q_search = depth >= search_depth, can_f_prune = false;
         if (q_search) {
             score = Eval();
             if (score >= beta) return beta;
@@ -138,7 +141,7 @@ public class MyBot : IChessBot
                 return static_eval - 100 * depth; // fail soft
             }
 
-            /* Null move pruning */
+            /* Null Move Pruning */
             if (depth_left >= 2 && allow_null && gamephase > 0) {
                 board.ForceSkipTurn();
                 score = -NegaMax(depth + 3 + depth / 4, -beta, -alpha, false); // why is the new depth calculated this way?
@@ -148,6 +151,9 @@ public class MyBot : IChessBot
                     return beta;
                 } //#DEBUG
             }
+
+            /* Extended Futility Pruning */
+            if (depth_left <= 5 && static_eval + 120 * depth <= alpha) can_f_prune = true;
         }
         if (!q_search) nodes++; //#DEBUG
         else quiesce_nodes++; //#DEBUG
@@ -166,16 +172,24 @@ public class MyBot : IChessBot
                 : move.IsCastles ? 2 //castles
                 : 20 // other moves
             );
-        //move_scores.AsSpan(0, moves.Length).Sort(moves);
         MemoryExtensions.Sort(move_scores, moves);
 
         // this avoids issues with with checkmate or stalemate only being seen in quiescence search
-        if (!q_search && moves.Length == 0) return board.IsInCheck() ? depth - 50000 : 0;
+        if (!q_search && moves.IsEmpty) return board.IsInCheck() ? depth - 50000 : 0;
 
         /* Main Search */
+        move_idx = 0;
         foreach (var move in moves)
         {
             board.MakeMove(move);
+
+            // don't prune captures, promotions, or checks (also ensure at least one move is searched)
+            if (can_f_prune && !(move.IsCapture || board.IsInCheck() || move.IsPromotion || move_idx++ == 0)) {
+                efp_count++;
+                board.UndoMove(move);
+                continue;
+            }
+
             score = -NegaMax(depth + 1, -beta, -alpha, true);
             board.UndoMove(move);
 
