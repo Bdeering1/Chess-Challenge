@@ -28,9 +28,9 @@ using static ChessChallenge.API.BitboardHelper;
  * -------------------------------------------------------------------------------------------------
  * - refactor transposition pruning code
  * - possibly refactor packed PSTs to use decimals
+ * - integrate piece values with PSTs
  * - add history heuristic
- * - add null move pruning
- * - add futility pruning
+ * - add extended futility pruning
  * - add aspiration windows
  */
 public class MyBot : IChessBot
@@ -38,12 +38,12 @@ public class MyBot : IChessBot
     private Board board;
     private Timer timer;
     private int timeAllowed;
+
     private int nodes; //#DEBUG
     private int quiesce_nodes; //#DEBUG
-    private int null_pruned; //#DEBUG
-    private double total_nqn_ratio = 0; //#DEBUG
-    private int total_moves = 0; //#DEBUG
     private int tt_hits; //#DEBUG
+    private int nmp_count; //#DEBUG
+    private int rfp_count; //#DEBUG
 
     private int search_depth;
     private int gamephase;
@@ -68,7 +68,7 @@ public class MyBot : IChessBot
 
         board = _board;
         timer = _timer;
-        nodes = quiesce_nodes = null_pruned = tt_hits = 0; //#DEBUG
+        nodes = quiesce_nodes = tt_hits = nmp_count = rfp_count = 0; //#DEBUG
         timeAllowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
 
         var final_score = 0; //#DEBUG
@@ -76,10 +76,10 @@ public class MyBot : IChessBot
 
         //Console.WriteLine(); //#DEBUG
         search_depth = 2;
-        while (true) // maximum search depth of 15
+        for (int alpha = -99999, beta = 99999;;) // maximum search depth of 15
         {
             nodes = tt_hits = 0; //#DEBUG
-            int score = NegaMax(0, -99999, 99999, true);
+            int score = NegaMax(0, alpha, beta, true);
             if (score != 11111) final_score = score; //#DEBUG
             //Console.WriteLine($"PV {GetPV()} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             search_depth++;
@@ -91,9 +91,7 @@ public class MyBot : IChessBot
                 /* PST Debug */
                 // Console.WriteLine($"Move: {GetPV()} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)GetPV().MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
 
-                total_moves++; //#DEBUG
-                total_nqn_ratio += (double) nodes / quiesce_nodes; //#DEBUG
-                Console.WriteLine($"Eval: {final_score,-5} PV {root_pv} TT {tt[board.ZobristKey].Item1} depth: {search_depth - 1, -2} nodes: {nodes, -6} quiesce nodes: {quiesce_nodes,-6} N/QN Ratio: {(total_nqn_ratio / total_moves),-6:0.###} n pruned: {null_pruned, -5} tt hits: {tt_hits, -5} tt_size: {tt.Count} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+                Console.WriteLine($"Eval: {final_score,-5} PV {root_pv} depth: {search_depth - 1, -2} nodes: {nodes, -6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count, -6} RFP: {rfp_count, -5} tt hits: {tt_hits, -5} tt size: {tt.Count} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
 
                 if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
                     Console.WriteLine(board.CreateDiagram()); //#DEBUG
@@ -113,8 +111,10 @@ public class MyBot : IChessBot
     {   
         if (depth > 0 && board.IsRepeatedPosition()) return 0;
 
+        int depth_left = search_depth - depth, score, move_idx = 0;
+
         /* Get Transposition Values */
-        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= search_depth - depth && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
+        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= depth_left && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
         {
             tt_hits++; //#DEBUG
             if (entry.Item3 == 0) return entry.Item2; // exact score
@@ -124,20 +124,29 @@ public class MyBot : IChessBot
 
         /* Quiescence Search (delta pruning) */
         var q_search = depth >= search_depth;
-        int score, move_idx = 0;
         if (q_search) {
             score = Eval();
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
         }
-        else if (/*beta - alpha == 1 && */!board.IsInCheck() && gamephase > 0) {
-            Eval();
+        else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 4*/)) {
+            var static_eval = Eval();
+
+            /* Reverse Futility Pruning */
+            if (depth_left <= 8 && static_eval - 100 * depth >= beta) {
+                rfp_count++;
+                return static_eval - 100 * depth; // fail soft
+            }
+
             /* Null move pruning */
-            if (search_depth - depth >= 2 && allow_null) {
+            if (depth_left >= 2 && allow_null && gamephase > 0) {
                 board.ForceSkipTurn();
                 score = -NegaMax(depth + 3 + depth / 4, -beta, -alpha, false); // why is the new depth calculated this way?
                 board.UndoSkipTurn();
-                if (score >= beta) { null_pruned++; return beta; }
+                if (score >= beta) {
+                    nmp_count++; //#DEBUG
+                    return beta;
+                } //#DEBUG
             }
         }
         if (!q_search) nodes++; //#DEBUG
@@ -182,14 +191,14 @@ public class MyBot : IChessBot
 
         /* Set Transposition Values */
         var best = Math.Min(alpha, beta);
-        if (!q_search && entry.Item4 <= search_depth - depth) // only update TT if entry is shallower than current search depth
+        if (!q_search && entry.Item4 <= depth_left) // only update TT if entry is shallower than current search depth
             tt[board.ZobristKey] = (
                 pv,
                 best,
                 alpha >= beta ? 2 /* lower bound */
                 : pv != default(Move) ? 0 /* exact bound */
                 : 1, /* upper bound */
-                search_depth - depth
+                depth_left
             );
 
         return best;
@@ -251,11 +260,9 @@ public class MyBot : IChessBot
         score = (mg * gamephase + eg * (24 - gamephase)) / 24; // max gamephase = 24
 
         /* Mobility Score */
-        //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score += side_multiplier;
-        score += board.GetLegalMoves().Length;
+        //score += board.GetLegalMoves().Length;
         //board.ForceSkipTurn();
-        //foreach (var move in board.GetLegalMoves()) if (move.MovePieceType != PieceType.Queen) score -= side_multiplier;
-        score -= board.GetLegalMoves().Length;
+        //score -= board.GetLegalMoves().Length;
         //board.UndoSkipTurn();
 
         return score * side_multiplier;
