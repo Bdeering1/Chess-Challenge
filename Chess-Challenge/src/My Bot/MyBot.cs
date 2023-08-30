@@ -58,8 +58,7 @@ public class MyBot : IChessBot
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
     private readonly int[] pawn_modifier = { 0, 0, 1, -1, -1, 0, 0 };
 
-    private Dictionary<ulong, Move[]> moves_table = new();
-    private Dictionary<ulong, (Move, int, int, int)> tt = new(); // (move, score, bound, depth_left), bound -> 0 = exact, 1 = upper, 2 = lower
+    private readonly (ulong, Move, int, int, int)[] tt = new (ulong, Move, int, int, int)[0x400000]; // (hash, move, score, depth_left, bound), bound -> 0 = exact, 1 = upper, 2 = lower
 
     private ulong[] packed_psts = PstPacker.Generate();
 
@@ -92,7 +91,7 @@ public class MyBot : IChessBot
                 /* PST Debug */
                 // Console.WriteLine($"Move: {GetPV()} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)GetPV().MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
 
-                Console.WriteLine($"Eval: {final_score,-5} PV {root_pv} depth: {search_depth - 1,-2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} tt hits: {tt_hits, -5} tt size: {tt.Count} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+                Console.WriteLine($"Eval: {final_score,-6} PV {root_pv, -13} depth: {search_depth - 1,-2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} tt hits: {tt_hits, -6} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
 
                 if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
                     Console.WriteLine(board.CreateDiagram()); //#DEBUG
@@ -117,13 +116,15 @@ public class MyBot : IChessBot
             move_idx = 0;
 
         /* Get Transposition Values */
-        if (tt.TryGetValue(board.ZobristKey, out var entry) && entry.Item4 >= depth_left && /* is this needed? -> */ depth > 0) // Item1 -> score, Item2 -> bouond, Item3 -> depth
+        ref var entry = ref tt[board.ZobristKey & 0x3FFFFF];
+        if (entry.Item1 == board.ZobristKey && entry.Item4 >= depth_left && /* is this needed? -> */ depth > 0
+            && (entry.Item5 == 0
+            || entry.Item5 == 1 && entry.Item3 <= alpha
+            || entry.Item5 == 2 && entry.Item3 >= beta))
         {
             tt_hits++; //#DEBUG
-            if (entry.Item3 == 0) return entry.Item2; // exact score
-            if (entry.Item3 == 1 && entry.Item2 <= alpha) return alpha; // fail low
-            if (entry.Item3 == 2 && entry.Item2 >= beta) return beta; // fail high
-        }
+            return entry.Item3;
+        } //#DEBUG
 
         /* Quiescence Search (delta pruning) */
         bool q_search = depth >= search_depth, can_f_prune = false;
@@ -148,7 +149,7 @@ public class MyBot : IChessBot
                 board.UndoSkipTurn();
                 if (score >= beta) {
                     nmp_count++; //#DEBUG
-                    return beta;
+                    return score; // fail soft
                 } //#DEBUG
             }
 
@@ -166,7 +167,7 @@ public class MyBot : IChessBot
         Span<int> move_scores = stackalloc int[moves.Length];
         foreach (Move move in moves)
             move_scores[move_idx++] = (
-                move == entry.Item1 && entry.Item3 == 0 ? 0 // PV move
+                move == entry.Item2 && entry.Item5 == 0 ? 0 // PV move
                 : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 1 // queen promotion
                 : move.IsCapture ? 10 - (int)move.CapturePieceType + (int)move.MovePieceType // MVV-LVA
                 : move.IsCastles ? 2 //castles
@@ -206,13 +207,14 @@ public class MyBot : IChessBot
         /* Set Transposition Values */
         var best = Math.Min(alpha, beta);
         if (!q_search && entry.Item4 <= depth_left) // only update TT if entry is shallower than current search depth
-            tt[board.ZobristKey] = (
+            entry = (
+                board.ZobristKey,
                 pv,
                 best,
+                depth_left,
                 alpha >= beta ? 2 /* lower bound */
                 : pv != default(Move) ? 0 /* exact bound */
-                : 1, /* upper bound */
-                depth_left
+                : 1 /* upper bound */
             );
 
         return best;
@@ -274,10 +276,10 @@ public class MyBot : IChessBot
         score = (mg * gamephase + eg * (24 - gamephase)) / 24; // max gamephase = 24
 
         /* Mobility Score */
-        //score += board.GetLegalMoves().Length;
-        //board.ForceSkipTurn();
-        //score -= board.GetLegalMoves().Length;
-        //board.UndoSkipTurn();
+        // score += board.GetLegalMoves().Length;
+        // board.ForceSkipTurn();
+        // score -= board.GetLegalMoves().Length;
+        // board.UndoSkipTurn();
 
         return score * side_multiplier;
     }
@@ -292,7 +294,8 @@ public class MyBot : IChessBot
 
     private Move GetPV() { //#DEBUG
         Move pv = default; //#DEBUG
-        if (tt.TryGetValue(board.ZobristKey, out var entry)) pv = entry.Item1; //#DEBUG
+        var entry = tt[board.ZobristKey & 0x3FFFFF]; //#DEBUG
+        if (entry.Item1 == board.ZobristKey) pv = entry.Item2; //#DEBUG
         return pv; //#DEBUG
     } //#DEBUG
 }
