@@ -108,7 +108,7 @@ namespace ChessChallenge.Application
             // Board Setup
             board = new Board();
             bool isGameWithHuman = whiteType is PlayerType.Human || blackType is PlayerType.Human;
-            int fenIndex = isGameWithHuman ? 0 : botMatchGameIndex / 2;
+            int fenIndex = isGameWithHuman ? 0 : botMatchGameIndex / (useTestPositions ? 1 : 2);
             board.LoadPosition(botMatchStartFens[fenIndex]);
 
             // Player Setup
@@ -326,7 +326,6 @@ namespace ChessChallenge.Application
                         autoNextTimer.Elapsed += (s, e) => AutoStartNextBotMatchGame(originalGameID, autoNextTimer);
                         autoNextTimer.AutoReset = false;
                         autoNextTimer.Start();
-
                     }
                     else if (autoStartNextBotMatch)
                     {

@@ -26,18 +26,16 @@ using static ChessChallenge.API.BitboardHelper;
  * 
  * Notes
  * -------------------------------------------------------------------------------------------------
- * - refactor transposition pruning code
  * - possibly refactor packed PSTs to use decimals
  * - integrate piece values with PSTs
  * - add history heuristic
- * - add extended futility pruning
  * - add aspiration windows
  */
 public class MyBot : IChessBot
 {
     private Board board;
     private Timer timer;
-    private int timeAllowed;
+    private int time_allowed;
 
     private int nodes; //#DEBUG
     private int quiesce_nodes; //#DEBUG
@@ -69,29 +67,27 @@ public class MyBot : IChessBot
         board = _board;
         timer = _timer;
         nodes = quiesce_nodes = tt_hits = nmp_count = rfp_count = 0; //#DEBUG
-        timeAllowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
+        time_allowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
 
-        var final_score = 0; //#DEBUG
         root_key = board.ZobristKey; //#DEBUG
 
         //Console.WriteLine(); //#DEBUG
         search_depth = 2;
-        for (int alpha = -99999, beta = 99999;;) // maximum search depth of 15
+        for (int alpha = -99999, beta = 99999, fail_lows = 0, fail_highs = 0;;)
         {
             nodes = tt_hits = 0; //#DEBUG
             int score = NegaMax(0, alpha, beta, true);
-            if (score != 11111) final_score = score; //#DEBUG
-            //Console.WriteLine($"PV {GetPV()} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
-            search_depth++;
+            //if (score != 11111) final_score = score; //#DEBUG
+            //Console.WriteLine($"PV {root_pv} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
 
-            if (timer.MillisecondsElapsedThisTurn > timeAllowed) {
+            if (timer.MillisecondsElapsedThisTurn > time_allowed) {
                 /* Timing Debug */
                 //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
 
                 /* PST Debug */
-                // Console.WriteLine($"Move: {GetPV()} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)GetPV().MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
+                // Console.WriteLine($"Move: {root_pv} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)root_pv.MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
 
-                Console.WriteLine($"Eval: {final_score,-6} PV {root_pv, -13} depth: {search_depth - 1,-2} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} tt hits: {tt_hits, -6} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+                Console.WriteLine($"Eval: {score,-6} PV {root_pv, -13} depth: {search_depth - 1,-3} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} fls: {fail_lows,-2} fhs: {fail_highs,-2} tt hits: {tt_hits, -6} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
 
                 if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
                     Console.WriteLine(board.CreateDiagram()); //#DEBUG
@@ -102,6 +98,17 @@ public class MyBot : IChessBot
 
                 return root_pv;
             } //#DEBUG
+
+            if (score <= alpha)
+                alpha -= 60 * ++fail_lows * fail_lows;
+            else if (score >= beta)
+                beta += 60 * ++fail_highs * fail_highs;
+            else {
+                // set up aspiration window
+                alpha = score - 25;
+                beta = score + 25;
+                search_depth++;
+            }
         }
     }
 
@@ -133,11 +140,11 @@ public class MyBot : IChessBot
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
         }
-        else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 4*/)) {
+        else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 0*/)) {
             var static_eval = Eval();
 
             /* Reverse Futility Pruning */
-            if (depth_left <= 8 && static_eval - 100 * depth >= beta) {
+            if (depth_left <= 8 && static_eval - 95 * depth >= beta) {
                 rfp_count++;
                 return static_eval - 100 * depth; // fail soft
             }
@@ -201,7 +208,7 @@ public class MyBot : IChessBot
             }
             if (score >= beta) break;
 
-            if (timer.MillisecondsElapsedThisTurn > timeAllowed) return 11111;
+            if (depth > 2 && timer.MillisecondsElapsedThisTurn > time_allowed) return 55555;
         }
 
         /* Set Transposition Values */
@@ -254,6 +261,7 @@ public class MyBot : IChessBot
         gamephase = 0;
         foreach (bool is_white in new[] { true, false }) //true = white, false = black (can likely be optimized for tokens if PSTs are changed)
         {
+            ulong attacks = 0;
             for (var piece_type = PieceType.None; piece_type++ < PieceType.King;)
             {
                 int piece = (int)piece_type;//, idx;
@@ -265,10 +273,12 @@ public class MyBot : IChessBot
 
                     mg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 0);
                     eg += piece_val[piece] * 2 + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 6);
-                }
-            }
 
-            mg = -mg;
+                    attacks |= GetPieceAttacks(piece_type, new Square(lsb), 0, is_white);
+                }
+            };
+
+            mg = -mg - GetNumberOfSetBits(GetKingAttacks(board.GetKingSquare(!is_white)) & attacks); // king safety score
             eg = -eg;
         }
 
@@ -291,11 +301,4 @@ public class MyBot : IChessBot
         if (debug) Console.WriteLine($"type: {type + 1} lsb: {lsb}, rank: {rank + 1}, file: {file + 1}, pst: {type * 4 + (file)}, pst_val: {(sbyte)((packed_psts[type * 4 + (file > 3 ? 7 - file : file)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF)}"); //#DEBUG
         return (sbyte)((packed_psts[type * 4 + (file > 3 ? 7 - file : file) + table_shift] >> (is_white ? 7 - rank : rank) * 8) & 0xFF);
     }
-
-    private Move GetPV() { //#DEBUG
-        Move pv = default; //#DEBUG
-        var entry = tt[board.ZobristKey & 0x3FFFFF]; //#DEBUG
-        if (entry.Item1 == board.ZobristKey) pv = entry.Item2; //#DEBUG
-        return pv; //#DEBUG
-    } //#DEBUG
 }

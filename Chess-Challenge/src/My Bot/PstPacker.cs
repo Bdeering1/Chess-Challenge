@@ -162,7 +162,7 @@ public class PstPacker
             eg_king_table
         };
 
-        ApplyNoise(table);
+        //ApplyNoise(table);
 
         ulong[] packedData = PackData(table);
 
