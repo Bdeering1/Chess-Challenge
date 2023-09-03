@@ -63,8 +63,6 @@ public class MyBot : IChessBot
 
     public Move Think(Board _board, Timer _timer)
     {
-        if (!logged_side) { if (_board.IsWhiteToMove && !logged_side) Console.WriteLine("Playing white"); else if (!logged_side) Console.WriteLine("Playing black"); logged_side = true; } //#DEBUG
-
         board = _board;
         timer = _timer;
         nodes = quiesce_nodes = tt_hits = nmp_count = rfp_count = 0; //#DEBUG
@@ -80,6 +78,8 @@ public class MyBot : IChessBot
             int score = NegaMax(0, alpha, beta, true);
             //if (score != 11111) final_score = score; //#DEBUG
             //Console.WriteLine($"PV {root_pv} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
+            var sec_elapsed = timer.MillisecondsElapsedThisTurn / 1000; //#DEBUG
+            Console.WriteLine($"info depth {search_depth} score cp {score} nodes {nodes} nps {nodes / (sec_elapsed != 0 ? sec_elapsed : 1)} time {timer.MillisecondsElapsedThisTurn} pv {root_pv.StartSquare.Name}{root_pv.TargetSquare.Name}"); //#DEBUG
 
             if (timer.MillisecondsElapsedThisTurn > time_allowed) {
                 /* Timing Debug */
@@ -88,7 +88,8 @@ public class MyBot : IChessBot
                 /* PST Debug */
                 // Console.WriteLine($"Move: {root_pv} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)root_pv.MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
 
-                Console.WriteLine($"\nEval: {score,-6} PV {root_pv, -13} depth: {search_depth,-3} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} fls: {fail_lows,-2} fhs: {fail_highs,-2} tt hits: {tt_hits, -6} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+                //Console.WriteLine($"\nEval: {score,-6} PV {root_pv, -13} depth: {search_depth,-3} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} fls: {fail_lows,-2} fhs: {fail_highs,-2} tt hits: {tt_hits, -6} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
+
 
                 if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
                     Console.WriteLine(board.CreateDiagram()); //#DEBUG
