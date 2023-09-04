@@ -79,7 +79,7 @@ public class MyBot : IChessBot
             //if (score != 11111) final_score = score; //#DEBUG
             //Console.WriteLine($"PV {root_pv} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             var sec_elapsed = timer.MillisecondsElapsedThisTurn / 1000; //#DEBUG
-            Console.WriteLine($"info depth {search_depth} score cp {score} nodes {nodes} nps {nodes / (sec_elapsed != 0 ? sec_elapsed : 1)} time {timer.MillisecondsElapsedThisTurn} pv {root_pv.StartSquare.Name}{root_pv.TargetSquare.Name}"); //#DEBUG
+            //Console.WriteLine($"info depth {search_depth} score cp {score} nodes {nodes} nps {nodes / (sec_elapsed != 0 ? sec_elapsed : 1)} time {timer.MillisecondsElapsedThisTurn} pv {root_pv.StartSquare.Name}{root_pv.TargetSquare.Name}"); //#DEBUG
 
             if (timer.MillisecondsElapsedThisTurn > time_allowed) {
                 /* Timing Debug */
