@@ -24,7 +24,7 @@ namespace Tuner
 
         public string Test(string engine1, string engine2, int rounds)
         {
-            cutechess.StartInfo.Arguments = $"-engine conf={engine1} -engine conf={engine2} -each tc=0/60+0 -maxmoves 1000 -games 2 -repeat -resultformat wide2 -ratinginterval 10 -rounds {rounds} -concurrency 4 -tournament gauntlet -pgnout out.pgn -openings file=C:\\Users\\Josh\\Desktop\\chess\\opening_books\\UHO_XXL_2022_+100_+129.epd format=epd";
+            cutechess.StartInfo.Arguments = $"-engine conf={engine1} -engine conf={engine2} -each tc=0/60+0 -maxmoves 1000 -games 2 -repeat -resultformat wide2 -ratinginterval 10 -rounds {rounds} -concurrency 4 -tournament gauntlet -pgnout out.pgn -openings file=\"C:\\Users\\Josh\\Desktop\\Code Stuff\\c#\\Chess-Challenge\\Tuner\\UHO_XXL_+1.00_+1.29.epd\" format=epd";
 
             try
             {
