@@ -59,7 +59,16 @@ public class MyBot : IChessBot
     private readonly (ulong, Move, int, int, int)[] tt = new (ulong, Move, int, int, int)[0x400000]; // (hash, move, score, depth_left, bound), bound -> 0 = exact, 1 = upper, 2 = lower
     private int[,,] history_table;
 
-    private ulong[] packed_psts = PstPacker.Generate();
+    private int[][] psts; //[64][12] (by-square first, then by-piece)
+    public MyBot()
+    {
+        var piece = 1;
+        psts = PstPacker.Generate().Select(packedTable =>
+        new System.Numerics.BigInteger(packedTable).ToByteArray().Take(12)
+                    .Select(square => (sbyte)square * 2 + piece_val[piece++ % 6])
+                .ToArray()
+        ).ToArray();
+    }
 
     public Move Think(Board _board, Timer _timer)
     {
@@ -282,8 +291,9 @@ public class MyBot : IChessBot
                     int lsb = ClearAndGetIndexOfLSB(ref mask);
                     gamephase += piece_phase[piece];
 
-                    mg += piece_val[piece] + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 0);
-                    eg += piece_val[piece] * 2 + pawn_modifier[piece] * pawns_count + GetPstVal(lsb, piece - 1, is_white, 6);
+                    //doesnt use piece value anymore since psts now include piece value
+                    mg += psts[lsb][piece-1] + pawn_modifier[piece] * pawns_count;
+                    eg += psts[lsb][piece+5] * 2 + pawn_modifier[piece] * pawns_count;
 
                     //attacks |= GetPieceAttacks(piece_type, new Square(lsb), 0, is_white);
                 }
@@ -303,13 +313,5 @@ public class MyBot : IChessBot
         board.UndoSkipTurn();
 
         return score * side_multiplier;
-    }
-
-    private int GetPstVal(int lsb, int type, bool is_white, int table_shift, bool debug = false) // table_shift - should be either 0 (mg PSTs) or 6 (eg PSTs)
-    {
-        var file = lsb % 8;
-        var rank = lsb / 8;
-        if (debug) Console.WriteLine($"type: {type + 1} lsb: {lsb}, rank: {rank + 1}, file: {file + 1}, pst: {type * 4 + (file)}, pst_val: {(sbyte)((packed_psts[type * 4 + (file > 3 ? 7 - file : file)] >> (is_white ? 7 - rank : rank) * 8) & 0xFF)}"); //#DEBUG
-        return (sbyte)((packed_psts[type * 4 + (file > 3 ? 7 - file : file) + table_shift] >> (is_white ? 7 - rank : rank) * 8) & 0xFF);
     }
 }

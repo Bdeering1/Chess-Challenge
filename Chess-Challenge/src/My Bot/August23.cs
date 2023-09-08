@@ -44,7 +44,7 @@ public class August23 : IChessBot
     //record struct TTEntry(Move move, int score, int bound, int depth); // bound: 0 = exact, 1 = upper, 2 = lower
     private Dictionary<ulong, (int, int, int)> tt = new(); // (score, bound, depth), bound -> 0 = exact, 1 = upper, 2 = lower
 
-    private ulong[] packed_psts = PstPacker.Generate();
+    private ulong[] packed_psts = new ulong[] {1}/*PstPacker.Generate()*/;
 
     public Move Think(Board _board, Timer _timer)
     {
