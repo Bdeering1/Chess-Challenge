@@ -152,27 +152,27 @@ public class MyBot : IChessBot
             if (score > alpha) alpha = score;
         }
         else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 0*/)) {
-            var static_eval = Eval();
+            //var static_eval = Eval();
 
-            /* Reverse Futility Pruning */
-            if (depth_left <= 8 && static_eval - 95 * depth >= beta) {
-                rfp_count++;
-                return static_eval - 100 * depth; // fail soft
-            }
+            ///* Reverse Futility Pruning */
+            //if (depth_left <= 8 && static_eval - 95 * depth >= beta) {
+            //    rfp_count++;
+            //    return static_eval - 100 * depth; // fail soft
+            //}
 
-            /* Null Move Pruning */
-            if (depth_left >= 2 && allow_null && gamephase > 0) {
-                board.ForceSkipTurn();
-                score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
-                board.UndoSkipTurn();
-                if (score >= beta) {
-                    nmp_count++; //#DEBUG
-                    return score; // fail soft
-                } //#DEBUG
-            }
+            ///* Null Move Pruning */
+            //if (depth_left >= 2 && allow_null && gamephase > 0) {
+            //    board.ForceSkipTurn();
+            //    score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
+            //    board.UndoSkipTurn();
+            //    if (score >= beta) {
+            //        nmp_count++; //#DEBUG
+            //        return score; // fail soft
+            //    } //#DEBUG
+            //}
 
-            /* Extended Futility Pruning */
-            if (depth_left <= 5 && static_eval + 120 * depth <= alpha) can_f_prune = true;
+            ///* Extended Futility Pruning */
+            //if (depth_left <= 5 && static_eval + 120 * depth <= alpha) can_f_prune = true;
         }
         if (!q_search) nodes++; //#DEBUG
         else quiesce_nodes++; //#DEBUG
@@ -188,7 +188,7 @@ public class MyBot : IChessBot
                 move == entry.Item2 && entry.Item5 == 0 ? 99999 // PV move
                 : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 99998 // queen promotion
                 : move.IsCapture ? 77777 - (int)move.CapturePieceType + (int)move.MovePieceType // MVV-LVA
-                : history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] // history heuristic
+                : 0//history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] // history heuristic
             );
         MemoryExtensions.Sort(move_scores, moves);
 
@@ -208,12 +208,12 @@ public class MyBot : IChessBot
         {
             board.MakeMove(move);
 
-            // don't prune captures, promotions, or checks (also ensure at least one move is searched)
-            if (can_f_prune && !(move.IsCapture || board.IsInCheck() || move.IsPromotion || move_idx++ == 0)) {
-                efp_count++;
-                board.UndoMove(move);
-                continue;
-            }
+            //// don't prune captures, promotions, or checks (also ensure at least one move is searched)
+            //if (can_f_prune && !(move.IsCapture || board.IsInCheck() || move.IsPromotion || move_idx++ == 0)) {
+            //    efp_count++;
+            //    board.UndoMove(move);
+            //    continue;
+            //}
 
             score = -NegaMax(depth + 1, -beta, -alpha, true);
             board.UndoMove(move);
@@ -274,8 +274,8 @@ public class MyBot : IChessBot
         if (board.IsDraw()) return 0;
 
         int score = 0,
-            side_multiplier = board.IsWhiteToMove ? 1 : -1,
-            pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
+            side_multiplier = board.IsWhiteToMove ? 1 : -1;
+            //pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
 
         int mg = 0, eg = 0;
         gamephase = 0;
@@ -291,9 +291,14 @@ public class MyBot : IChessBot
                     int lsb = ClearAndGetIndexOfLSB(ref mask);
                     gamephase += piece_phase[piece];
 
+<<<<<<< Updated upstream
                     //doesnt use piece value anymore since psts now include piece value
                     mg += psts[lsb][piece-1] + pawn_modifier[piece] * pawns_count;
                     eg += psts[lsb][piece+5] * 2 + pawn_modifier[piece] * pawns_count;
+=======
+                    mg += piece_val[piece]/* + pawn_modifier[piece] * pawns_count */+ GetPstVal(lsb, piece - 1, is_white, 0);
+                    eg += piece_val[piece]/* * 2*/ /*+ pawn_modifier[piece] * pawns_count */+ GetPstVal(lsb, piece - 1, is_white, 6);
+>>>>>>> Stashed changes
 
                     //attacks |= GetPieceAttacks(piece_type, new Square(lsb), 0, is_white);
                 }
@@ -307,10 +312,10 @@ public class MyBot : IChessBot
         score = (mg * gamephase + eg * (24 - gamephase)) / 24; // max gamephase = 24
 
         /* Mobility Score */
-        score += board.GetLegalMoves().Length;
-        board.ForceSkipTurn();
-        score -= board.GetLegalMoves().Length;
-        board.UndoSkipTurn();
+        //score += board.GetLegalMoves().Length;
+        //board.ForceSkipTurn();
+        //score -= board.GetLegalMoves().Length;
+        //board.UndoSkipTurn();
 
         return score * side_multiplier;
     }
