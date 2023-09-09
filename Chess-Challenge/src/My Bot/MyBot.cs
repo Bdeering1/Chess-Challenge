@@ -271,7 +271,7 @@ public class MyBot : IChessBot
      */
     private int Eval()
     {
-        if (board.IsDraw()) return 0;
+        //if (board.IsDraw()) return 0;
 
         int score = 0,
             side_multiplier = board.IsWhiteToMove ? 1 : -1;
