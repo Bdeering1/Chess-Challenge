@@ -99,14 +99,13 @@ public class MyBot : IChessBot
 
                 //Console.WriteLine($"\nEval: {score,-6} PV {root_pv, -13} depth: {search_depth,-3} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} fls: {fail_lows,-2} fhs: {fail_highs,-2} tt hits: {tt_hits, -6} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
 
-
+                Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
                 if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
                     Console.WriteLine(board.CreateDiagram()); //#DEBUG
                     Console.WriteLine($"{root_pv}"); //#DEBUG
                     Console.WriteLine($"is original position: {(root_key == board.ZobristKey)}"); //#DEBUG
                     throw new Exception("ERROR: Trying to make move that doesn't exist"); //#DEBUG
                 } //#DEBUG
-
                 return root_pv;
             } //#DEBUG
 
@@ -120,6 +119,7 @@ public class MyBot : IChessBot
                 beta = score + 25;
                 search_depth++;
             }
+            Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
         }
     }
 

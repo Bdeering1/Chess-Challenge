@@ -25,7 +25,6 @@ namespace ChessChallenge.Application
             Stockfish8,
             Stockfish12,
             Stockfish20,
-            August23,
             Sidhant,
             Tjalle,
             Wolo
@@ -229,7 +228,6 @@ namespace ChessChallenge.Application
                 PlayerType.Stockfish8 => new ChessPlayer(new Stockfish(8), type, GameDurationMilliseconds),
                 PlayerType.Stockfish12 => new ChessPlayer(new Stockfish(12), type, GameDurationMilliseconds),
                 PlayerType.Stockfish20 => new ChessPlayer(new Stockfish(20), type, GameDurationMilliseconds),
-                PlayerType.August23 => new ChessPlayer(new August23(), type, GameDurationMilliseconds),
                 PlayerType.Sidhant => new ChessPlayer(new Sidhant(), type, GameDurationMilliseconds),
                 PlayerType.Tjalle => new ChessPlayer(new Tjalle(), type, GameDurationMilliseconds),
                 PlayerType.Wolo => new ChessPlayer(new Wolo(), type, GameDurationMilliseconds),
