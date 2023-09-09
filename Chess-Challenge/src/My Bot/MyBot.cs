@@ -291,14 +291,9 @@ public class MyBot : IChessBot
                     int lsb = ClearAndGetIndexOfLSB(ref mask);
                     gamephase += piece_phase[piece];
 
-<<<<<<< Updated upstream
                     //doesnt use piece value anymore since psts now include piece value
-                    mg += psts[lsb][piece-1] + pawn_modifier[piece] * pawns_count;
-                    eg += psts[lsb][piece+5] * 2 + pawn_modifier[piece] * pawns_count;
-=======
-                    mg += piece_val[piece]/* + pawn_modifier[piece] * pawns_count */+ GetPstVal(lsb, piece - 1, is_white, 0);
-                    eg += piece_val[piece]/* * 2*/ /*+ pawn_modifier[piece] * pawns_count */+ GetPstVal(lsb, piece - 1, is_white, 6);
->>>>>>> Stashed changes
+                    mg += psts[lsb][piece - 1];// + pawn_modifier[piece] * pawns_count;
+                    eg += psts[lsb][piece + 5];// * 2 + pawn_modifier[piece] * pawns_count;
 
                     //attacks |= GetPieceAttacks(piece_type, new Square(lsb), 0, is_white);
                 }
@@ -308,7 +303,7 @@ public class MyBot : IChessBot
             eg = -eg;
         }
 
-        mg += 10 * side_multiplier; // tempo bonus
+        //mg += 10 * side_multiplier; // tempo bonus
         score = (mg * gamephase + eg * (24 - gamephase)) / 24; // max gamephase = 24
 
         /* Mobility Score */
