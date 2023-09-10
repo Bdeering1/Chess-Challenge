@@ -54,7 +54,7 @@ public class MyBot : IChessBot
 
     private readonly int[] piece_val = { 0, 100, 317 /* 325 - 8 */, 333 /* 325 + 8 */, 558 /* 550 + 8 */, 1000, 0 };
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
-    private readonly int[] pawn_modifier = { 0, 0, 1, -1, -1, 0, 0 };
+    //private readonly int[] pawn_modifier = { 0, 0, 1, -1, -1, 0, 0 };
 
     private readonly (ulong, Move, int, int, int)[] tt = new (ulong, Move, int, int, int)[0x400000]; // (hash, move, score, depth_left, bound), bound -> 0 = exact, 1 = upper, 2 = lower
     private int[,,] history_table;
@@ -63,11 +63,13 @@ public class MyBot : IChessBot
     public MyBot()
     {
         var piece = 1;
-        psts = PstPacker.Generate().Select(packedTable =>
-        new System.Numerics.BigInteger(packedTable).ToByteArray().Take(12)
-                    .Select(square => (sbyte)square * 2 + piece_val[piece++ % 6])
-                .ToArray()
-        ).ToArray();
+        psts = PstPacker.Generate()
+                        .Select(packedTable => new System.Numerics.BigInteger(packedTable)
+                            .ToByteArray()
+                            .Take(12)
+                            .Select(square => (sbyte)square * 2 + piece_val[piece++ % 6])
+                            .ToArray())
+                        .ToArray();
     }
 
     public Move Think(Board _board, Timer _timer)
@@ -75,7 +77,7 @@ public class MyBot : IChessBot
         board = _board;
         timer = _timer;
         nodes = quiesce_nodes = tt_hits = nmp_count = rfp_count = 0; //#DEBUG
-        time_allowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
+        time_allowed = 2400;// 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27));
         history_table = new int[2, 7, 64]; // [side_to_move][piece_type][square]
 
         root_key = board.ZobristKey; //#DEBUG
@@ -99,27 +101,21 @@ public class MyBot : IChessBot
 
                 //Console.WriteLine($"\nEval: {score,-6} PV {root_pv, -13} depth: {search_depth,-3} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} fls: {fail_lows,-2} fhs: {fail_highs,-2} tt hits: {tt_hits, -6} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
 
-                Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
-                if (!board.GetLegalMoves().Contains(root_pv)) { //#DEBUG
-                    Console.WriteLine(board.CreateDiagram()); //#DEBUG
-                    Console.WriteLine($"{root_pv}"); //#DEBUG
-                    Console.WriteLine($"is original position: {(root_key == board.ZobristKey)}"); //#DEBUG
-                    throw new Exception("ERROR: Trying to make move that doesn't exist"); //#DEBUG
-                } //#DEBUG
                 return root_pv;
             } //#DEBUG
 
-            if (score <= alpha)
-                alpha -= 60 * ++fail_lows * fail_lows;
-            else if (score >= beta)
-                beta += 60 * ++fail_highs * fail_highs;
-            else {
-                // set up aspiration window
-                alpha = score - 25;
-                beta = score + 25;
-                search_depth++;
-            }
+            //if (score <= alpha)
+            //    alpha -= 60 * ++fail_lows * fail_lows;
+            //else if (score >= beta)
+            //    beta += 60 * ++fail_highs * fail_highs;
+            //else
+            //{
+            //    // set up aspiration window
+            //    alpha = score - 25;
+            //    beta = score + 25;
+            search_depth++;
             Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
+            //}
         }
     }
 
@@ -145,7 +141,7 @@ public class MyBot : IChessBot
         } //#DEBUG
 
         /* Quiescence Search (delta pruning) */
-        bool q_search = depth >= search_depth, can_f_prune = false;
+        bool q_search = depth >= search_depth;//, can_f_prune = false;
         if (q_search) {
             score = Eval();
             if (score >= beta) return beta;
@@ -240,7 +236,7 @@ public class MyBot : IChessBot
                 best,
                 depth_left,
                 alpha >= beta ? 2 /* lower bound */
-                : pv != default(Move) ? 0 /* exact bound */
+                : pv != default ? 0 /* exact bound */
                 : 1 /* upper bound */
             );
 
@@ -271,9 +267,9 @@ public class MyBot : IChessBot
      */
     private int Eval()
     {
-        //if (board.IsDraw()) return 0;
+        if (board.IsDraw()) return 0;
 
-        int score = 0,
+        int score,
             side_multiplier = board.IsWhiteToMove ? 1 : -1;
             //pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
 

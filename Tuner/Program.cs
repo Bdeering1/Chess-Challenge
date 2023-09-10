@@ -8,7 +8,7 @@ namespace Tuner
         {
             Console.WriteLine("starting cutechess");
             CuteChess cutechess = new();
-            Console.WriteLine(cutechess.Test("baseline_sept5", "stockfish", 500, 4));
+            Console.WriteLine(cutechess.Test("baseline_sept5", "stockfish", 250, 4));
         }
     }
 }
