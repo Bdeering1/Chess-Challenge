@@ -77,8 +77,8 @@ public class MyBot : IChessBot
         board = _board;
         timer = _timer;
         nodes = quiesce_nodes = tt_hits = nmp_count = rfp_count = 0; //#DEBUG
-        //NEW TIMING: 2 * timer.MillisecondsRemaining / (35 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 67))
-        time_allowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27)); //OLD
+        time_allowed = 2 * timer.MillisecondsRemaining / (35 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 67));
+        //time_allowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27)); //OLD
         history_table = new int[2, 7, 64]; // [side_to_move][piece_type][square]
 
         root_key = board.ZobristKey; //#DEBUG
@@ -185,7 +185,7 @@ public class MyBot : IChessBot
                 move == entry.Item2 && entry.Item5 == 0 ? 99999 // PV move
                 : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 99998 // queen promotion
                 : move.IsCapture ? 77777 - (int)move.CapturePieceType + (int)move.MovePieceType // MVV-LVA
-                : 0//history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] // history heuristic
+                : history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] // history heuristic
             );
         MemoryExtensions.Sort(move_scores, moves);
 
