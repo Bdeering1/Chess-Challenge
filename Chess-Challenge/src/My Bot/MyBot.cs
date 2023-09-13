@@ -104,7 +104,7 @@ public class MyBot : IChessBot
             //    // set up aspiration window
             //    alpha = score - 25;
             //    beta = score + 25;
-            Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes} pv {root_pv.StartSquare.Name}{root_pv.TargetSquare.Name} score {score}");
+            Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
             search_depth++;
             //}
         }
