@@ -24,7 +24,7 @@ namespace Tuner
 
         public string Test(string engine1, string engine2, int rounds, int threads)
         {
-            cutechess.StartInfo.Arguments = $"-engine conf={engine1} -engine conf={engine2} -each tc=0/60+0 -maxmoves 1000 -games 2 -repeat -resultformat wide2 -ratinginterval 10 -rounds {rounds} -concurrency {threads} -tournament gauntlet -pgnout out.pgn -openings file=\"{Path.GetFullPath(Path.Combine("../../../../", "Tuner", "UHO_XXL_+1.00_+1.29.epd"))}\" format=epd";
+            cutechess.StartInfo.Arguments = $"-engine conf={engine1} -engine conf={engine2} -each tc=0/60+0 -maxmoves 1000 -games 2 -repeat -resultformat wide2 -ratinginterval 10 -rounds {rounds} -concurrency {threads} -tournament gauntlet -pgnout out.pgn -openings file=\"{Path.GetFullPath(Path.Combine("../../../../", "Tuner", "UHO_XXL_+1.00_+1.29.epd"))}\" format=epd order=random";
 
             try
             {
