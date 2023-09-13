@@ -93,17 +93,7 @@ public class MyBot : IChessBot
             var sec_elapsed = timer.MillisecondsElapsedThisTurn / 1000; //#DEBUG
             //Console.WriteLine($"info depth {search_depth} score cp {score} nodes {nodes} nps {nodes / (sec_elapsed != 0 ? sec_elapsed : 1)} time {timer.MillisecondsElapsedThisTurn} pv {root_pv.StartSquare.Name}{root_pv.TargetSquare.Name}"); //#DEBUG
 
-            if (timer.MillisecondsElapsedThisTurn > time_allowed) {
-                /* Timing Debug */
-                //Console.WriteLine($"{$"{timer.MillisecondsElapsedThisTurn:0.##}ms", -8} avg: {$"{(timer.GameStartTimeMilliseconds - timer.MillisecondsRemaining) / ++moves:0}ms", -8} depth: {search_depth}"); //#DEBUG
-
-                /* PST Debug */
-                // Console.WriteLine($"Move: {root_pv} PST Val (Move.To): {GetPstVal(GetPV().TargetSquare.Index, (int)root_pv.MovePieceType - 1, board.IsWhiteToMove, true)}"); //#DEBUG
-
-                //Console.WriteLine($"\nEval: {score,-6} PV {root_pv, -13} depth: {search_depth,-3} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-6} NMP: {nmp_count,-6} RFP: {rfp_count,-5} EFP: {efp_count,-5} fls: {fail_lows,-2} fhs: {fail_highs,-2} tt hits: {tt_hits, -6} delta: {timer.MillisecondsElapsedThisTurn}ms"); //#DEBUG
-
-                return root_pv;
-            } //#DEBUG
+            if (timer.MillisecondsElapsedThisTurn > time_allowed || score > 49000) return root_pv;
 
             //if (score <= alpha)
             //    alpha -= 60 * ++fail_lows * fail_lows;
@@ -114,8 +104,8 @@ public class MyBot : IChessBot
             //    // set up aspiration window
             //    alpha = score - 25;
             //    beta = score + 25;
+            Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes} pv {root_pv.StartSquare.Name}{root_pv.TargetSquare.Name} score {score}");
             search_depth++;
-            Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
             //}
         }
     }
@@ -126,7 +116,7 @@ public class MyBot : IChessBot
     {   
         if (depth > 0 && board.IsRepeatedPosition()) return 0;
 
-        int score,
+        int score = Eval(),
             depth_left = search_depth - depth,
             move_idx = 0;
 
@@ -144,29 +134,30 @@ public class MyBot : IChessBot
         /* Quiescence Search (delta pruning) */
         bool q_search = depth >= search_depth;//, can_f_prune = false;
         if (q_search) {
-            score = Eval();
+            //score = Eval();
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
         }
         else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 0*/)) {
-            //var static_eval = Eval();
 
             ///* Reverse Futility Pruning */
             //if (depth_left <= 8 && static_eval - 95 * depth >= beta) {
-            //    rfp_count++;
+            //    rfp_count++;  
             //    return static_eval - 100 * depth; // fail soft
             //}
 
             ///* Null Move Pruning */
-            //if (depth_left >= 2 && allow_null && gamephase > 0) {
-            //    board.ForceSkipTurn();
-            //    score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
-            //    board.UndoSkipTurn();
-            //    if (score >= beta) {
-            //        nmp_count++; //#DEBUG
-            //        return score; // fail soft
-            //    } //#DEBUG
-            //}
+            if (depth_left >= 2 && allow_null && gamephase > 0)
+            {
+                board.ForceSkipTurn();
+                score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
+                board.UndoSkipTurn();
+                if (score >= beta)
+                {
+                    nmp_count++; //#DEBUG
+                    return score; // fail soft
+                } //#DEBUG
+            }
 
             ///* Extended Futility Pruning */
             //if (depth_left <= 5 && static_eval + 120 * depth <= alpha) can_f_prune = true;
@@ -178,6 +169,9 @@ public class MyBot : IChessBot
         Move pv = default;
         Span<Move> moves = stackalloc Move[128];
         board.GetLegalMovesNonAlloc(ref moves, q_search/* && !board.IsInCheck()*/);
+
+        // checking for checkmate / stalemate
+        if (!q_search && moves.IsEmpty) return board.IsInCheck() ? depth - 50000 : 0;
 
         Span<int> move_scores = stackalloc int[moves.Length];
         foreach (Move move in moves)
@@ -195,9 +189,6 @@ public class MyBot : IChessBot
         //         Console.Write($"{moves[i]} {move_scores[i], -3} "); //#DEBUG
         //     } //#DEBUG
         // }
-
-        // this avoids issues with with checkmate or stalemate only being seen in quiescence search
-        if (!q_search && moves.IsEmpty) return board.IsInCheck() ? depth - 50000 : 0;
 
         /* Main Search */
         move_idx = 0;
@@ -221,7 +212,7 @@ public class MyBot : IChessBot
                 if (depth == 0) root_pv = move;
             }
             if (score >= beta) {
-                if (!move.IsCapture) history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth_left * depth_left;
+                if (!move.IsCapture && gamephase > 0) history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth_left * depth_left;
                 break;
             }
 
