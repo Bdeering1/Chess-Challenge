@@ -141,23 +141,24 @@ public class MyBot : IChessBot
         else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 0*/)) {
 
             ///* Reverse Futility Pruning */
-            //if (depth_left <= 8 && static_eval - 95 * depth >= beta) {
-            //    rfp_count++;  
-            //    return static_eval - 100 * depth; // fail soft
-            //}
+            if (depth_left <= 8 && score - 95 * depth >= beta)
+            {
+                rfp_count++;
+                return score - 100 * depth; // fail soft
+            }
 
             ///* Null Move Pruning */
-            if (depth_left >= 2 && allow_null && gamephase > 0)
-            {
-                board.ForceSkipTurn();
-                score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
-                board.UndoSkipTurn();
-                if (score >= beta)
-                {
-                    nmp_count++; //#DEBUG
-                    return score; // fail soft
-                } //#DEBUG
-            }
+            //if (depth_left >= 2 && allow_null && gamephase > 0)
+            //{
+            //    board.ForceSkipTurn();
+            //    score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
+            //    board.UndoSkipTurn();
+            //    if (score >= beta)
+            //    {
+            //        nmp_count++; //#DEBUG
+            //        return score; // fail soft
+            //    } //#DEBUG
+            //}
 
             ///* Extended Futility Pruning */
             //if (depth_left <= 5 && static_eval + 120 * depth <= alpha) can_f_prune = true;
