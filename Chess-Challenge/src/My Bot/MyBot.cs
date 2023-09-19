@@ -213,7 +213,7 @@ public class MyBot : IChessBot
                 if (depth == 0) root_pv = move;
             }
             if (score >= beta) {
-                if (!move.IsCapture && gamephase > 0) history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth_left * depth_left;
+                if (!move.IsCapture) history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth_left * depth_left;
                 break;
             }
 
