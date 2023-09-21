@@ -49,7 +49,7 @@ public class MyBot : IChessBot
 
     private Move root_pv;
     private ulong root_key; //#DEBUG
-    
+
     private bool logged_side = false; //#DEBUG
 
     private readonly int[] piece_val = { 0, 100, 317 /* 325 - 8 */, 333 /* 325 + 8 */, 558 /* 550 + 8 */, 1000, 0 };
@@ -85,7 +85,7 @@ public class MyBot : IChessBot
 
         //Console.WriteLine(); //#DEBUG
         search_depth = 2;
-        for (int alpha = -99999, beta = 99999, fail_lows = 0, fail_highs = 0;;)
+        for (int alpha = -99999, beta = 99999, fail_lows = 0, fail_highs = 0; ;)
         {
             int score = NegaMax(0, alpha, beta, true);
             //if (score != 11111) final_score = score; //#DEBUG
@@ -113,7 +113,7 @@ public class MyBot : IChessBot
 
     /* SEARCH ---------------------------------------------------------------------------------- */
     private int NegaMax(int depth, int alpha, int beta, bool allow_null)
-    {   
+    {
         if (depth > 0 && board.IsRepeatedPosition()) return 0;
 
         int score = Eval(),
@@ -132,36 +132,37 @@ public class MyBot : IChessBot
         } //#DEBUG
 
         /* Quiescence Search (delta pruning) */
-        bool q_search = depth >= search_depth;//, can_f_prune = false;
-        if (q_search) {
+        bool q_search = depth >= search_depth, can_f_prune = false;
+        if (q_search)
+        {
             //score = Eval();
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
         }
-        else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 0*/)) {
+        else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 0*/))
+        {
 
             ///* Reverse Futility Pruning */
-            if (depth_left <= 8 && score - 95 * depth >= beta)
-            {
-                rfp_count++;
-                return score - 100 * depth; // fail soft
-            }
-
-            ///* Null Move Pruning */
-            //if (depth_left >= 2 && allow_null && gamephase > 0)
-            //{
-            //    board.ForceSkipTurn();
-            //    score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
-            //    board.UndoSkipTurn();
-            //    if (score >= beta)
-            //    {
-            //        nmp_count++; //#DEBUG
-            //        return score; // fail soft
-            //    } //#DEBUG
+            //if (depth_left <= 8 && static_eval - 95 * depth >= beta) {
+            //    rfp_count++;  
+            //    return static_eval - 100 * depth; // fail soft
             //}
 
+            ///* Null Move Pruning */
+            if (depth_left >= 2 && allow_null && gamephase > 0)
+            {
+                board.ForceSkipTurn();
+                score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
+                board.UndoSkipTurn();
+                if (score >= beta)
+                {
+                    nmp_count++; //#DEBUG
+                    return score; // fail soft
+                } //#DEBUG
+            }
+
             ///* Extended Futility Pruning */
-            //if (depth_left <= 5 && static_eval + 120 * depth <= alpha) can_f_prune = true;
+            if (depth_left <= 6 && score + 132 * depth <= alpha) can_f_prune = true;
         }
         if (!q_search) nodes++; //#DEBUG
         else quiesce_nodes++; //#DEBUG
@@ -198,22 +199,25 @@ public class MyBot : IChessBot
             board.MakeMove(move);
 
             //// don't prune captures, promotions, or checks (also ensure at least one move is searched)
-            //if (can_f_prune && !(move.IsCapture || board.IsInCheck() || move.IsPromotion || move_idx++ == 0)) {
-            //    efp_count++;
-            //    board.UndoMove(move);
-            //    continue;
-            //}
+            if (can_f_prune && !(move.IsCapture || board.IsInCheck() || move.IsPromotion || move_idx++ == 0))
+            {
+                efp_count++;
+                board.UndoMove(move);
+                continue;
+            }
 
             score = -NegaMax(depth + 1, -beta, -alpha, true);
             board.UndoMove(move);
 
-            if (score > alpha) {
+            if (score > alpha)
+            {
                 alpha = score;
                 pv = move;
                 if (depth == 0) root_pv = move;
             }
-            if (score >= beta) {
-                if (!move.IsCapture) history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth_left * depth_left;
+            if (score >= beta)
+            {
+                if (!move.IsCapture && gamephase > 0) history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth_left * depth_left;
                 break;
             }
 
@@ -264,7 +268,7 @@ public class MyBot : IChessBot
 
         int score,
             side_multiplier = board.IsWhiteToMove ? 1 : -1;
-            //pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
+        //pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
 
         int mg = 0, eg = 0;
         gamephase = 0;
