@@ -4,11 +4,12 @@ namespace Tuner
 {
     internal class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            Console.WriteLine("starting cutechess");
-            CuteChess cutechess = new();
-            Console.WriteLine(cutechess.Test("baseline_sept5", "stockfish", 500, 4));
+            var finished = PgnParser.Parse("../../../../pgns/bigtest.pgn", "../../../../pgns/bigtestfens.txt");
+            //Console.WriteLine("starting cutechess");
+            //CuteChess cutechess = new();
+            //Console.WriteLine(cutechess.Test("engine1", "stockfish", 500, 4));
         }
     }
 }
