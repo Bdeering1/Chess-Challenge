@@ -1,40 +1,29 @@
 ﻿using ChessChallenge.API;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 
 using static ChessChallenge.API.BitboardHelper;
 
-/*
- * Development Resources
- * -------------------------------------------------------------------------------------------------
- * Move Ordering:                                       https://rustic-chess.org/search/ordering/reason.html
- * Average moves per game:                              https://chess.stackexchange.com/a/4899
- * Effective branching factor:                          https://www.chessprogramming.org/Branching_Factor#EffectiveBranchingFactor
- * History Heuristic                                    https://www.chessprogramming.org/History_Heuristic
- * Killer Moves                                         https://www.chessprogramming.org/Killer_Heuristic
- * 
- * Tiny Chess League:                                   https://chess.stjo.dev/
- * Make EvilBot use Stockfish:                          https://github.com/SebLague/Chess-Challenge/discussions/311
- * Add buttons to play against different bots:          https://github.com/SebLague/Chess-Challenge/discussions/239
- * Chess Challenge Discord:                             https://discord.com/invite/pAadhun2px
- */
+
 public class MyBot : IChessBot
 {
     private Board board;
     private Timer timer;
     private int time_allowed;
 
+    private int nodes; //#DEBUG
+
     private int search_depth;
     private int gamephase;
-
     private Move root_pv;
 
     private readonly int[] piece_val = { 0, 100, 325, 325, 550, 1000, 0 };
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
 
-    private readonly (ulong, Move, int, int, int)[] tt = new (ulong, Move, int, int, int)[0x400000]; // (hash, move, score, depth_left, bound), bound -> 0 = exact, 1 = upper, 2 = lower
+    // (hash, move, score, depth_left, bound), bound -> 0 = exact, 1 = upper, 2 = lower
+    private readonly (ulong, Move, int, int, int)[] tt = new (ulong, Move, int, int, int)[0x400000];
     private int[,,] history_table;
+    private Move[] killer_moves;
 
     private int[][] psts; //[64][12] (by-square first, then by-piece)
     public MyBot()
@@ -51,29 +40,30 @@ public class MyBot : IChessBot
 
     public Move Think(Board _board, Timer _timer)
     {
+        nodes = 0; //#DEBUG
+
         board = _board;
         timer = _timer;
         time_allowed = 2 * timer.MillisecondsRemaining / (35 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 67));
         history_table = new int[2, 7, 64]; // [side_to_move][piece_type][square]
+        killer_moves = new Move[2048];
 
         search_depth = 2;
         for (int alpha = -99999, beta = 99999, fail_lows = 0, fail_highs = 0; ;)
         {
             int score = NegaMax(0, alpha, beta, true);
-            var sec_elapsed = timer.MillisecondsElapsedThisTurn / 1000; //#DEBUG
-
             if (timer.MillisecondsElapsedThisTurn > time_allowed || score > 49000) return root_pv;
 
             /* Aspiration Windows */
             if (score <= alpha)
-               alpha -= 65; // * ++fail_lows * fail_lows;
+               alpha -= 65; // * ++fail_lows;
             else if (score >= beta)
-               beta += 65; // * ++fail_highs * fail_highs;
+               beta += 65; // * ++fail_highs;
             else
             {
                 alpha = score - 45;
                 beta = score + 45;
-                //Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
+                Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
                 search_depth++;
             }
         }
@@ -84,6 +74,7 @@ public class MyBot : IChessBot
     private int NegaMax(int depth, int alpha, int beta, bool allow_null)
     {
         if (depth > 0 && board.IsRepeatedPosition()) return 0;
+        nodes++; //#DEBUG
 
         int score = Eval(),
             depth_left = search_depth - depth,
@@ -129,7 +120,7 @@ public class MyBot : IChessBot
         /* Move Ordering */
         Move pv = default;
         Span<Move> moves = stackalloc Move[128];
-        board.GetLegalMovesNonAlloc(ref moves, q_search/* && !board.IsInCheck()*/);
+        board.GetLegalMovesNonAlloc(ref moves, q_search);
 
         // checking for checkmate / stalemate
         if (!q_search && moves.IsEmpty) return board.IsInCheck() ? depth - 50000 : 0;
@@ -139,7 +130,8 @@ public class MyBot : IChessBot
             move_scores[move_idx++] = -(
                 move == entry.Item2 && entry.Item5 == 0 ? 99999 // PV move
                 : (move.IsPromotion && move.PromotionPieceType == PieceType.Queen) ? 99998 // queen promotion
-                : move.IsCapture ? 77777 - (int)move.CapturePieceType + (int)move.MovePieceType // MVV-LVA
+                : move.IsCapture ? 88888 - (int)move.CapturePieceType + (int)move.MovePieceType // MVV-LVA
+                : killer_moves[board.PlyCount] == move ? 77777 // killer move
                 : history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] // history heuristic
             );
         MemoryExtensions.Sort(move_scores, moves);
@@ -168,7 +160,10 @@ public class MyBot : IChessBot
             }
             if (score >= beta)
             {
-                if (!move.IsCapture && gamephase > 0) history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth_left * depth_left;
+                if (!move.IsCapture) {
+                    if (gamephase > 0) history_table[board.IsWhiteToMove ? 0 : 1, (int)move.MovePieceType, move.TargetSquare.Index] += depth_left * depth_left;
+                    killer_moves[board.PlyCount] = move;
+                }
                 break;
             }
 
@@ -193,20 +188,6 @@ public class MyBot : IChessBot
 
 
     /* EVALUATION ------------------------------------------------------------------------------ */
-    /* 
-     * Eval Options
-     * --------------------------------------------------------------------------------------------------
-     * Piece Square                                 https://www.chessprogramming.org/Piece-Square_Tables
-     *   - could be programatically generated
-     * Piece Specific Eval                          https://www.chessprogramming.org/Evaluation_of_Pieces
-     * Pattern Evaluation                           https://www.chessprogramming.org/Evaluation_Patterns
-     * Mobility                                     https://www.chessprogramming.org/Mobility
-     * Center Control                               https://www.chessprogramming.org/Center_Control
-     * Connectivity                                 https://www.chessprogramming.org/Connectivity
-     * King Safety                                  https://www.chessprogramming.org/King_Safety
-     * Space                                        https://www.chessprogramming.org/Space
-     * Tempo                                        https://www.chessprogramming.org/Tempo
-     */
     private int Eval()
     {
         if (board.IsDraw()) return 0;
@@ -227,7 +208,7 @@ public class MyBot : IChessBot
                     int lsb = ClearAndGetIndexOfLSB(ref mask);
                     gamephase += piece_phase[piece];
 
-                    // doesn't use piece value anymore since psts include piece value
+                    // piece values are included in PSTs
                     mg += psts[lsb][piece - 1];
                     eg += psts[lsb][piece + 5];
                 }
