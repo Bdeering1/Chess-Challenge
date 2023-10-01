@@ -18,18 +18,6 @@ using static ChessChallenge.API.BitboardHelper;
  * Make EvilBot use Stockfish:                          https://github.com/SebLague/Chess-Challenge/discussions/311
  * Add buttons to play against different bots:          https://github.com/SebLague/Chess-Challenge/discussions/239
  * Chess Challenge Discord:                             https://discord.com/invite/pAadhun2px
- * 
- * Interesting looking bots:
- *  - https://github.com/nathanWolo/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
- *  - https://github.com/Tjalle-S/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs 
- *  - https://github.com/Sidhant-Roymoulik/Chess-Challenge/blob/main/Chess-Challenge/src/My%20Bot/MyBot.cs
- * 
- * Notes
- * -------------------------------------------------------------------------------------------------
- * - possibly refactor packed PSTs to use decimals
- * - integrate piece values with PSTs
- * - add history heuristic
- * - add aspiration windows
  */
 public class MyBot : IChessBot
 {
@@ -37,24 +25,13 @@ public class MyBot : IChessBot
     private Timer timer;
     private int time_allowed;
 
-    private int nodes; //#DEBUG
-    private int quiesce_nodes; //#DEBUG
-    private int tt_hits; //#DEBUG
-    private int nmp_count; //#DEBUG
-    private int rfp_count; //#DEBUG
-    private int efp_count; //#DEBUG
-
     private int search_depth;
     private int gamephase;
 
     private Move root_pv;
-    private ulong root_key; //#DEBUG
 
-    private bool logged_side = false; //#DEBUG
-
-    private readonly int[] piece_val = { 0, 100, 317 /* 325 - 8 */, 333 /* 325 + 8 */, 558 /* 550 + 8 */, 1000, 0 };
+    private readonly int[] piece_val = { 0, 100, 325, 325, 550, 1000, 0 };
     private readonly int[] piece_phase = { 0, 0, 1, 1, 2, 4, 0 };
-    //private readonly int[] pawn_modifier = { 0, 0, 1, -1, -1, 0, 0 };
 
     private readonly (ulong, Move, int, int, int)[] tt = new (ulong, Move, int, int, int)[0x400000]; // (hash, move, score, depth_left, bound), bound -> 0 = exact, 1 = upper, 2 = lower
     private int[,,] history_table;
@@ -76,37 +53,29 @@ public class MyBot : IChessBot
     {
         board = _board;
         timer = _timer;
-        nodes = quiesce_nodes = tt_hits = nmp_count = rfp_count = 0; //#DEBUG
         time_allowed = 2 * timer.MillisecondsRemaining / (35 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 67));
-        //time_allowed = 2 * timer.MillisecondsRemaining / (60 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 27)); //OLD
         history_table = new int[2, 7, 64]; // [side_to_move][piece_type][square]
 
-        root_key = board.ZobristKey; //#DEBUG
-
-        //Console.WriteLine(); //#DEBUG
         search_depth = 2;
         for (int alpha = -99999, beta = 99999, fail_lows = 0, fail_highs = 0; ;)
         {
             int score = NegaMax(0, alpha, beta, true);
-            //if (score != 11111) final_score = score; //#DEBUG
-            //Console.WriteLine($"PV {root_pv} score: {score, -5} depth: {search_depth} nodes: {nodes,-6} quiesce nodes: {quiesce_nodes,-8} tt hits: {tt_hits, -5} delta: {timer.MillisecondsElapsedThisTurn/* - reg_delta*/}ms"); //#DEBUG
             var sec_elapsed = timer.MillisecondsElapsedThisTurn / 1000; //#DEBUG
-            //Console.WriteLine($"info depth {search_depth} score cp {score} nodes {nodes} nps {nodes / (sec_elapsed != 0 ? sec_elapsed : 1)} time {timer.MillisecondsElapsedThisTurn} pv {root_pv.StartSquare.Name}{root_pv.TargetSquare.Name}"); //#DEBUG
 
             if (timer.MillisecondsElapsedThisTurn > time_allowed || score > 49000) return root_pv;
 
-            //if (score <= alpha)
-            //    alpha -= 60 * ++fail_lows * fail_lows;
-            //else if (score >= beta)
-            //    beta += 60 * ++fail_highs * fail_highs;
-            //else
-            //{
-            //    // set up aspiration window
-            //    alpha = score - 25;
-            //    beta = score + 25;
-            Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
-            search_depth++;
-            //}
+            /* Aspiration Windows */
+            if (score <= alpha)
+               alpha -= 65; // * ++fail_lows * fail_lows;
+            else if (score >= beta)
+               beta += 65; // * ++fail_highs * fail_highs;
+            else
+            {
+                alpha = score - 45;
+                beta = score + 45;
+                //Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}");
+                search_depth++;
+            }
         }
     }
 
@@ -126,46 +95,36 @@ public class MyBot : IChessBot
             && (entry.Item5 == 0
             || entry.Item5 == 1 && entry.Item3 <= alpha
             || entry.Item5 == 2 && entry.Item3 >= beta))
-        {
-            tt_hits++; //#DEBUG
             return entry.Item3;
-        } //#DEBUG
 
         /* Quiescence Search (delta pruning) */
         bool q_search = depth >= search_depth, can_f_prune = false;
         if (q_search)
         {
-            //score = Eval();
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
         }
         else if (!board.IsInCheck() && (beta - alpha == 1/* || gamephase > 0*/))
         {
 
-            ///* Reverse Futility Pruning */
+            /* Reverse Futility Pruning */
             //if (depth_left <= 8 && static_eval - 95 * depth >= beta) {
             //    rfp_count++;  
             //    return static_eval - 100 * depth; // fail soft
             //}
 
-            ///* Null Move Pruning */
+            /* Null Move Pruning */
             if (depth_left >= 2 && allow_null && gamephase > 0)
             {
                 board.ForceSkipTurn();
-                score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false); // why is the new depth calculated this way?
+                score = -NegaMax(depth + 3 + depth_left / 4, -beta, -alpha, false);
                 board.UndoSkipTurn();
-                if (score >= beta)
-                {
-                    nmp_count++; //#DEBUG
-                    return score; // fail soft
-                } //#DEBUG
+                if (score >= beta) return score; // fail soft
             }
 
-            ///* Extended Futility Pruning */
-            if (depth_left <= 6 && score + 132 * depth <= alpha) can_f_prune = true;
+            /* Extended Futility Pruning */
+            if (depth_left <= 4 && score + 96 * depth <= alpha) can_f_prune = true;
         }
-        if (!q_search) nodes++; //#DEBUG
-        else quiesce_nodes++; //#DEBUG
 
         /* Move Ordering */
         Move pv = default;
@@ -185,23 +144,15 @@ public class MyBot : IChessBot
             );
         MemoryExtensions.Sort(move_scores, moves);
 
-        // if (depth == 0 && search_depth > 4) { //#DEBUG
-        //     Console.WriteLine(); //#DEBUG
-        //     for (int i = 0; i < move_scores.Length; i++) {
-        //         Console.Write($"{moves[i]} {move_scores[i], -3} "); //#DEBUG
-        //     } //#DEBUG
-        // }
-
         /* Main Search */
         move_idx = 0;
         foreach (var move in moves)
         {
             board.MakeMove(move);
 
-            //// don't prune captures, promotions, or checks (also ensure at least one move is searched)
+            // don't prune captures, promotions, or checks (also ensure at least one move is searched)
             if (can_f_prune && !(move.IsCapture || board.IsInCheck() || move.IsPromotion || move_idx++ == 0))
             {
-                efp_count++;
                 board.UndoMove(move);
                 continue;
             }
@@ -255,12 +206,6 @@ public class MyBot : IChessBot
      * King Safety                                  https://www.chessprogramming.org/King_Safety
      * Space                                        https://www.chessprogramming.org/Space
      * Tempo                                        https://www.chessprogramming.org/Tempo
-     * 
-     * Todo
-     * --------------------------------------------------------------------------------------------------
-     * - add king safety
-     * - incremental eval?
-     * - provision for timing out opponent?
      */
     private int Eval()
     {
@@ -268,42 +213,32 @@ public class MyBot : IChessBot
 
         int score,
             side_multiplier = board.IsWhiteToMove ? 1 : -1;
-        //pawns_count = 16 - board.GetAllPieceLists()[0].Count - board.GetAllPieceLists()[6].Count;
 
         int mg = 0, eg = 0;
         gamephase = 0;
         foreach (bool is_white in new[] { true, false }) //true = white, false = black (can likely be optimized for tokens if PSTs are changed)
         {
-            //ulong attacks = 0;
             for (var piece_type = PieceType.None; piece_type++ < PieceType.King;)
             {
-                int piece = (int)piece_type;//, idx;
+                int piece = (int)piece_type;
                 ulong mask = board.GetPieceBitboard(piece_type, is_white);
                 while (mask != 0)
                 {
                     int lsb = ClearAndGetIndexOfLSB(ref mask);
                     gamephase += piece_phase[piece];
 
-                    //doesnt use piece value anymore since psts now include piece value
-                    mg += psts[lsb][piece - 1];// + pawn_modifier[piece] * pawns_count;
-                    eg += psts[lsb][piece + 5];// * 2 + pawn_modifier[piece] * pawns_count;
-
-                    //attacks |= GetPieceAttacks(piece_type, new Square(lsb), 0, is_white);
+                    // doesn't use piece value anymore since psts include piece value
+                    mg += psts[lsb][piece - 1];
+                    eg += psts[lsb][piece + 5];
                 }
             };
 
-            mg = -mg;// - GetNumberOfSetBits(GetKingAttacks(board.GetKingSquare(!is_white)) & attacks); // king safety score
+            mg = -mg;
             eg = -eg;
         }
 
         //mg += 10 * side_multiplier; // tempo bonus
         score = (mg * gamephase + eg * (24 - gamephase)) / 24; // max gamephase = 24
-
-        /* Mobility Score */
-        //score += board.GetLegalMoves().Length;
-        //board.ForceSkipTurn();
-        //score -= board.GetLegalMoves().Length;
-        //board.UndoSkipTurn();
 
         return score * side_multiplier;
     }
