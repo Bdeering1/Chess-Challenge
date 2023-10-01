@@ -167,14 +167,14 @@ public class PstPacker
 
 		decimal[] packedData = PackData(table);
 
-		//Console.Write("{ ");
-		//for (int square = 0; square < 64; square++)
-		//{
-		//    if (square % 8 == 0)
-		//        Console.WriteLine();
-		//    Console.Write($"0x{new BigInteger(packedData[square]):X}, ");
-		//}
-		//Console.WriteLine("\n};");
+		Console.Write("{ ");
+		for (int square = 0; square < 64; square++)
+		{
+		   if (square % 8 == 0)
+		       Console.WriteLine();
+		   Console.Write($"{new BigInteger(packedData[square])}m, ");
+		}
+		Console.WriteLine("\n};");
 
 		//Console.WriteLine("Unpacked table:\n");
 		//UnpackData(packedData);

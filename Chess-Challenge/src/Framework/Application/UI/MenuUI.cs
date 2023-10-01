@@ -22,31 +22,19 @@ namespace ChessChallenge.Application
                 var blackType = !controller.HumanWasWhiteLastGame ? ChallengeController.PlayerType.MyBot : ChallengeController.PlayerType.Human;
                 controller.StartNewGame(whiteType, blackType);
             }
-            if (NextButtonInRow("vs Sidhant", ref buttonPos, spacing, buttonSize))
-            {
-                controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.Sidhant);
-            }
-            if (NextButtonInRow("vs Tjalle", ref buttonPos, spacing, buttonSize))
-            {
-                controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.Tjalle);
-            }
-            if (NextButtonInRow("vs Wolo", ref buttonPos, spacing, buttonSize))
-            {
-                controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.Wolo);
-            }
             if (NextButtonInRow("vs 90% Stockfish", ref buttonPos2, spacing, buttonSize))
             {
                 controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.MostlyStockfish);
             }
-            if (NextButtonInRow("vs Stockfish 4", ref buttonPos2, spacing, buttonSize))
+            if (NextButtonInRow("vs Stockfish 4", ref buttonPos, spacing, buttonSize))
             {
                 controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.Stockfish4);
             }
-            if (NextButtonInRow("vs Stockfish 8", ref buttonPos2, spacing, buttonSize))
+            if (NextButtonInRow("vs Stockfish 8", ref buttonPos, spacing, buttonSize))
             {
                 controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.Stockfish8);
             }
-            if (NextButtonInRow("vs Stockfish 12", ref buttonPos2, spacing, buttonSize))
+            if (NextButtonInRow("vs Stockfish 12", ref buttonPos, spacing, buttonSize))
             {
                 controller.StartNewBotMatch(ChallengeController.PlayerType.MyBot, ChallengeController.PlayerType.Stockfish12);
             }
