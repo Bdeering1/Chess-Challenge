@@ -7,8 +7,6 @@ using static ChessChallenge.API.BitboardHelper;
 
 public class MyBot : IChessBot
 {
-    private int nodes; //#DEBUG
-
     private int search_depth;
     private int gamephase;
     private Move root_pv;
@@ -42,8 +40,6 @@ public class MyBot : IChessBot
 
     public Move Think(Board board, Timer timer)
     {
-        nodes = 0; //#DEBUG
-
         var history_table = new int[2, 7, 64]; // [side_to_move][piece_type][square]
         var killer_moves = new Move[2048];
         var time_allowed = 2 * timer.MillisecondsRemaining / (35 + 1444 / (board.PlyCount / 2 /* <- # of full moves */ + 67));
@@ -63,7 +59,6 @@ public class MyBot : IChessBot
             {
                 alpha = score - 45;
                 beta = score + 45;
-                Console.WriteLine($"info depth {search_depth} time {timer.MillisecondsElapsedThisTurn} nodes {nodes}"); //#DEBUG
                 search_depth++;
             }
         }
@@ -73,7 +68,6 @@ public class MyBot : IChessBot
         int NegaMax(int depth, int alpha, int beta, bool allow_null = true)
         {
             if (depth > 0 && board.IsRepeatedPosition()) return 0;
-            nodes++; //#DEBUG
 
             int score = Eval(),
                 depth_left = search_depth - depth,
@@ -185,9 +179,9 @@ public class MyBot : IChessBot
             if (board.IsDraw()) return 0;
 
             int score,
+                mg = 0, eg = 0,
                 side_multiplier = board.IsWhiteToMove ? 1 : -1;
 
-            int mg = 0, eg = 0;
             gamephase = 0;
             foreach (bool is_white in new[] { true, false }) //true = white, false = black (can likely be optimized for tokens if PSTs are changed)
             {
@@ -198,11 +192,13 @@ public class MyBot : IChessBot
                     while (mask != 0)
                     {
                         int lsb = ClearAndGetIndexOfLSB(ref mask);
-                        gamephase += piece_phase[piece];
 
                         // piece values are included in PSTs
                         mg += psts[lsb][piece - 1];
                         eg += psts[lsb][piece + 5];
+                        if (piece == 3 && mask != 0) eg += 75; // bishop pair bonus
+
+                        gamephase += piece_phase[piece];
                     }
                 };
 
@@ -210,7 +206,6 @@ public class MyBot : IChessBot
                 eg = -eg;
             }
 
-            //mg += 10 * side_multiplier; // tempo bonus
             score = (mg * gamephase + eg * (24 - gamephase)) / 24; // max gamephase = 24
 
             return score * side_multiplier;
